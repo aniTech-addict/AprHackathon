@@ -14,10 +14,8 @@ interface ClassificationResult {
 }
 
 /**
- * 
- * @param {String} input: approximated score of context provided by user for research topic based 
- * on input word count, goal, scope, source signal
- * score above 0.3 is classified as descriptive, below 0.3 is classified as vague
+ * Classifies user research input using a heuristic approach based on word count and presence of certain keywords.
+ * @param {String} input - User research topic input to classify
  * @returns {Object} category, confidence score and reasoning for classification
  */
 function heuristicClassify(input: string): ClassificationResult {
@@ -100,6 +98,8 @@ async function classifyWithOpenRouter(input: string): Promise<ClassificationResu
     return null;
   }
 
+  // Validate and parse the respponse and handle errors
+  // expected format: {category: "descriptive" | "vague", confidence: number between 0 and 1, reasoning: string}
   try {
     const parsed = JSON.parse(result.content) as ClassificationResult;
     if (
@@ -120,8 +120,9 @@ async function classifyWithOpenRouter(input: string): Promise<ClassificationResu
 
 /**
  * 
- * @param {String} 
- * @returns 
+ * @param {String} input - User research topic input to classify 
+ * @returns {Promise<ClassificationResult>} ClassificationResult with category, confidence score and reasoning for classification
+ * The function first attempts to classify the input using the OpenRouter API. If the API call fails or returns an invalid response, it falls back to a heuristic classification method based on word count and presence of certain keywords.
  */
 export async function classifyInput(input: string): Promise<ClassificationResult> {
   try {

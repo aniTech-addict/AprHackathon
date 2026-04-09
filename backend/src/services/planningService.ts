@@ -209,6 +209,10 @@ Output rules:
   return null;
 }
 
+/**
+ * Fallback plan generation using a heuristic approach with predefined segments and queries based on the topic. 
+  used when llm support isnt available
+*/
 function generateHeuristicPlan(input: PlanningInput): ResearchPlan {
   const defaultSegments: ResearchSegment[] = [
     {

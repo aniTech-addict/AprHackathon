@@ -1,3 +1,9 @@
+/**
+ * Stores each research session in database
+ * functions name are descritvie enough
+ */
+
+
 import { pool } from "../db";
 import { InputCategory } from "../services/inputClassifier";
 
@@ -56,6 +62,12 @@ export async function updateSessionWithClarity(
   );
 }
 
+/**
+ * Retrieves a research session from the database by its ID.
+ * @param sessionId 
+ * @returns {SessionRecord | null} SessionRecord if found, otherwise null
+ * The function retrieves a research session from the database by its ID. It returns a SessionRecord object containing the session details if found, or null if no session with the given ID exists. The preferredSites field is stored as JSONB in the database and is parsed back into an array of strings before being returned in the SessionRecord.
+ */
 export async function getSession(
   sessionId: string
 ): Promise<SessionRecord | null> {

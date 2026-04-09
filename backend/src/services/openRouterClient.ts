@@ -27,6 +27,11 @@ export interface StreamJsonChatResult {
 
 let openRouterClientPromise: Promise<any> | null = null;
 
+/**
+ * @returns {Promise} OpenRouter client instance or null if initialization fails (e.g. missing API key)
+ * The function initializes and returns an OpenRouter client instance. It checks for the presence of the OPENROUTER_API_KEY environment variable and attempts to import and create the client. 
+ * If the API key is missing or if initialization fails, it logs an error and returns null,calling functions handle the null case... dsfas
+ */
 async function getOpenRouterClient(): Promise<any | null> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
@@ -53,6 +58,11 @@ async function getOpenRouterClient(): Promise<any | null> {
   return openRouterClientPromise;
 }
 
+/**
+ * yet to be documented
+ * @param request 
+ * @returns 
+ */
 export async function streamJsonChatCompletion(
   request: StreamJsonChatRequest
 ): Promise<StreamJsonChatResult | null> {

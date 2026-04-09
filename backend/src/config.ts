@@ -3,7 +3,7 @@ import path from "path";
 
 dotenv.config({
     path: path.resolve(process.cwd(), ".env.local"),
-    // In local development, prefer repo .env.local over machine-level inherited vars.
+    
     override: (process.env.NODE_ENV || "development") !== "production",
 });
 
@@ -13,6 +13,8 @@ function normalizeEnvString(value: string | undefined): string | undefined {
 }
 
 const envDatabaseUrl = normalizeEnvString(process.env.DATABASE_URL);
+
+// { SHIT CODE TO REMOVE } rem to remove in later phase of development
 const hardcodedLocalDbUrl = "postgres://postgres:postgres@127.0.0.1:5433/web_researcher";
 
 export const config = {
