@@ -4,6 +4,10 @@
   padding: 4rem 1.25rem 3rem;
 }
 
+.shell-wide {
+  max-width: min(1680px, calc(100vw - 2.5rem));
+}
+
 .hero {
   margin-bottom: 2.5rem;
 }
@@ -215,18 +219,18 @@ select.field {
   margin: 0.4rem 0;
 }
 
-.plan-two-col {
+.resizable-two-col {
   display: grid;
   grid-template-columns: 58% 10px minmax(0, 1fr);
   gap: 1.2rem;
   align-items: start;
 }
 
-.plan-editor-col {
+.resizable-two-col-left {
   min-width: 0;
 }
 
-.col-resizer {
+.resizable-two-col-resizer {
   width: 10px;
   align-self: stretch;
   border-radius: 999px;
@@ -237,14 +241,22 @@ select.field {
   transition: background 0.2s ease;
 }
 
-.col-resizer:hover {
+.resizable-two-col-resizer:hover {
   background: linear-gradient(180deg, #c8dcf1 0%, #b6cde5 100%);
+}
+
+.resizable-two-col-right {
+  min-width: 0;
+  position: sticky;
+  top: 1rem;
+}
+
+.plan-editor-col {
+  min-width: 0;
 }
 
 .plan-preview-col {
   min-width: 0;
-  position: sticky;
-  top: 1rem;
 }
 
 .segments-list {
@@ -378,19 +390,23 @@ select.field {
     grid-template-columns: 1fr;
   }
 
-  .plan-two-col {
+  .resizable-two-col {
     grid-template-columns: 1fr;
   }
 
-  .col-resizer {
+  .resizable-two-col-resizer {
     display: none;
   }
 
-  .plan-preview-col {
+  .resizable-two-col-right {
     position: static;
   }
 
   .shell {
     padding-top: 2.6rem;
+  }
+
+  .shell-wide {
+    max-width: calc(100vw - 1.25rem);
   }
 }

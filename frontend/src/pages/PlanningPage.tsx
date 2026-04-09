@@ -1,5 +1,6 @@
-import type { FormEvent, MouseEvent as ReactMouseEvent } from 'react'
+import type { FormEvent } from 'react'
 import { useState } from 'react'
+import { ResizableTwoColumnLayout } from '../components/ResizableTwoColumnLayout'
 import type { PlanningResponse, ResearchSegment } from '../types'
 
 interface PlanningPageProps {
@@ -42,7 +43,6 @@ export function PlanningPage({ apiBaseUrl, sessionId, onError }: PlanningPagePro
   const [isApproving, setIsApproving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [editorWidthPercent, setEditorWidthPercent] = useState(58)
   const [planData, setPlanData] = useState<PlanningResponse | null>(null)
   const [editablePlan, setEditablePlan] = useState<{
     totalPages: number
@@ -149,32 +149,6 @@ export function PlanningPage({ apiBaseUrl, sessionId, onError }: PlanningPagePro
       })),
     }
     return normalized
-  }
-
-  function clampWidth(value: number) {
-    return Math.max(35, Math.min(75, value))
-  }
-
-  function handleResizeStart(event: ReactMouseEvent<HTMLDivElement>) {
-    event.preventDefault()
-    const container = event.currentTarget.parentElement
-    if (!container) return
-
-    const rect = container.getBoundingClientRect()
-
-    const handleMouseMove = (moveEvent: MouseEvent) => {
-      const cursorX = moveEvent.clientX - rect.left
-      const nextWidth = (cursorX / rect.width) * 100
-      setEditorWidthPercent(clampWidth(nextWidth))
-    }
-
-    const handleMouseUp = () => {
-      window.removeEventListener('mousemove', handleMouseMove)
-      window.removeEventListener('mouseup', handleMouseUp)
-    }
-
-    window.addEventListener('mousemove', handleMouseMove)
-    window.addEventListener('mouseup', handleMouseUp)
   }
 
   async function handlePlanning(event: FormEvent<HTMLFormElement>) {
@@ -348,7 +322,7 @@ export function PlanningPage({ apiBaseUrl, sessionId, onError }: PlanningPagePro
   }
 
   return (
-    <main className="shell">
+    <main className="shell shell-wide">
       <header className="hero">
         <p className="eyebrow">Web Researcher Agent</p>
         <h1>Research Plan Generated</h1>
@@ -356,13 +330,10 @@ export function PlanningPage({ apiBaseUrl, sessionId, onError }: PlanningPagePro
       </header>
 
       <section className="card">
-        <div
+        <ResizableTwoColumnLayout
           className="plan-two-col"
-          style={{
-            gridTemplateColumns: `${editorWidthPercent}% 10px minmax(0, 1fr)`,
-          }}
-        >
-          <div className="plan-editor-col">
+          left={
+            <div className="plan-editor-col">
             <h2>Plan Overview</h2>
             <label htmlFor="total-pages" className="label">
               Total Pages
@@ -508,23 +479,16 @@ export function PlanningPage({ apiBaseUrl, sessionId, onError }: PlanningPagePro
             {notice ? <p className="success-note">{notice}</p> : null}
             {error ? <p className="error">{error}</p> : null}
           </div>
-
-          <div
-            className="col-resizer"
-            role="separator"
-            aria-label="Resize plan editor and markdown preview"
-            aria-orientation="vertical"
-            onMouseDown={handleResizeStart}
-            title="Drag to resize columns"
-          />
-
-          <aside className="plan-preview-col">
+          }
+          right={
+            <div className="plan-preview-col">
             <div className="markdown-preview">
               <h3>Plan Markdown</h3>
               <pre className="code-block">{liveMarkdown}</pre>
             </div>
-          </aside>
-        </div>
+          </div>
+          }
+        />
       </section>
     </main>
   )
