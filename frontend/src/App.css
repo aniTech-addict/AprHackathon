@@ -36,6 +36,102 @@ h1 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.form-card {
+  max-width: 860px;
+}
+
+form {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.label {
+  font-weight: 700;
+  color: #1f2937;
+  margin-top: 0.2rem;
+}
+
+.field {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid #c6d7e7;
+  padding: 0.75rem 0.85rem;
+  font: inherit;
+  color: #111827;
+  background: #fcfdff;
+}
+
+textarea.field {
+  resize: vertical;
+}
+
+.field:focus {
+  outline: 2px solid rgba(40, 128, 221, 0.28);
+  border-color: #3d85cf;
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #4b5563;
+}
+
+.button {
+  margin-top: 0.25rem;
+  border: 0;
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  font: inherit;
+  font-weight: 700;
+  color: #ffffff;
+  background: linear-gradient(130deg, #0c6fbf, #139471);
+  cursor: pointer;
+}
+
+.button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.error {
+  margin-top: 1rem;
+  color: #b42318;
+}
+
+.result {
+  margin-top: 1.1rem;
+  border-top: 1px dashed #c9d4e5;
+  padding-top: 1rem;
+}
+
+.result h2 {
+  margin: 0 0 0.6rem;
+}
+
+.result p {
+  margin: 0.2rem 0;
+}
+
+.badge {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 0.15rem 0.55rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.badge.descriptive {
+  color: #06695e;
+  background: #def7ef;
+}
+
+.badge.vague {
+  color: #9c4a0a;
+  background: #fff0dc;
+}
+
 .card {
   background: rgba(255, 255, 255, 0.86);
   border: 1px solid rgba(31, 38, 53, 0.16);
