@@ -146,7 +146,10 @@ Return ONLY valid JSON with this exact schema:
       Array.isArray(parsed.segments) &&
       parsed.segments.length > 0
     ) {
-      const planMarkdown = generateMarkdownPlan(input.topic, parsed);
+      const planMarkdown = generateMarkdownPlan(input.topic, {
+        totalPages: parsed.totalPages,
+        segments: parsed.segments,
+      });
       return {
         totalPages: parsed.totalPages,
         segments: parsed.segments,
