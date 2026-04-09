@@ -1,154 +1,60 @@
-import { FormEvent, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import './App.css'
-
-type InputCategory = 'descriptive' | 'vague'
-
-interface StartResearchResponse {
-  sessionId: string
-  topic: string
-  inputCategory: InputCategory
-  confidence: number
-  reasoning: string
-  nextStep: 'ask_clarity_questions' | 'generate_research_plan'
-}
+import { InputPage } from './pages/InputPage'
+import { ClarityPage } from './pages/ClarityPage'
+import { PlanningPage } from './pages/PlanningPage'
+import type { Phase, StartResearchResponse } from './types'
 
 function App() {
-  const [topic, setTopic] = useState('')
-  const [preferredSitesText, setPreferredSitesText] = useState('')
-  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [currentPhase, setCurrentPhase] = useState<Phase>('input')
+  const [sessionId, setSessionId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [result, setResult] = useState<StartResearchResponse | null>(null)
 
   const apiBaseUrl = useMemo(
     () => import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000',
     [],
   )
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
+  function handleInputSubmit(response: StartResearchResponse) {
+    setSessionId(response.sessionId)
     setError(null)
 
-    const trimmedTopic = topic.trim()
-    if (!trimmedTopic) {
-      setError('Please enter a research topic before continuing.')
-      return
-    }
-
-    const preferredSites = preferredSitesText
-      .split(',')
-      .map((value) => value.trim())
-      .filter(Boolean)
-
-    setIsSubmitting(true)
-    try {
-      const response = await fetch(`${apiBaseUrl}/api/research/start`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          topic: trimmedTopic,
-          preferredSites,
-        }),
-      })
-
-      if (!response.ok) {
-        const payload = (await response.json()) as { message?: string }
-        throw new Error(payload.message || 'Failed to start research session.')
-      }
-
-      const payload = (await response.json()) as StartResearchResponse
-      setResult(payload)
-    } catch (submitError) {
-      if (submitError instanceof Error) {
-        setError(submitError.message)
-      } else {
-        setError('Unexpected error while starting research session.')
-      }
-    } finally {
-      setIsSubmitting(false)
+    if (response.nextStep === 'ask_clarity_questions') {
+      setCurrentPhase('clarity')
+    } else {
+      setCurrentPhase('planning')
     }
   }
 
-  return (
-    <main className="shell">
-      <header className="hero">
-        <p className="eyebrow">Web Researcher Agent</p>
-        <h1>Phase 2: Input Section</h1>
-        <p className="lead">
-          Submit the initial research topic. The system classifies it as
-          descriptive or vague and decides whether planning can start directly
-          or clarity questions are needed.
-        </p>
-      </header>
+  function handleClarityComplete() {
+    setError(null)
+    setCurrentPhase('planning')
+  }
 
-      <section className="card form-card">
-        <form onSubmit={handleSubmit}>
-          <label htmlFor="topic" className="label">
-            Research Topic
-          </label>
-          <textarea
-            id="topic"
-            className="field"
-            rows={6}
-            placeholder="Example: Analyze world hunger trends from 2000-2025 and evaluate policy-level interventions that improved food security."
-            value={topic}
-            onChange={(event) => setTopic(event.target.value)}
-          />
+  function handleError(errorMsg: string) {
+    setError(errorMsg)
+  }
 
-          <label htmlFor="preferred-sites" className="label">
-            Preferred Sites (optional)
-          </label>
-          <input
-            id="preferred-sites"
-            className="field"
-            placeholder="who.int, worldbank.org, fao.org"
-            value={preferredSitesText}
-            onChange={(event) => setPreferredSitesText(event.target.value)}
-          />
+  if (currentPhase === 'input') {
+    return <InputPage apiBaseUrl={apiBaseUrl} onInputSubmit={handleInputSubmit} onError={handleError} />
+  }
 
-          <p className="hint">
-            We will auto-filter sources by reputation and still prioritize any
-            trusted sites you provide.
-          </p>
+  if (currentPhase === 'clarity' && sessionId) {
+    return (
+      <ClarityPage
+        apiBaseUrl={apiBaseUrl}
+        sessionId={sessionId}
+        onClarityComplete={handleClarityComplete}
+        onError={handleError}
+      />
+    )
+  }
 
-          <button type="submit" className="button" disabled={isSubmitting}>
-            {isSubmitting ? 'Categorizing...' : 'Start Research Input Phase'}
-          </button>
-        </form>
+  if (currentPhase === 'planning' && sessionId) {
+    return <PlanningPage apiBaseUrl={apiBaseUrl} sessionId={sessionId} onError={handleError} />
+  }
 
-        {error ? <p className="error">{error}</p> : null}
-
-        {result ? (
-          <article className="result">
-            <h2>Input Categorization Result</h2>
-            <p>
-              <strong>Session:</strong> {result.sessionId}
-            </p>
-            <p>
-              <strong>Category:</strong>{' '}
-              <span className={`badge ${result.inputCategory}`}>
-                {result.inputCategory}
-              </span>
-            </p>
-            <p>
-              <strong>Confidence:</strong>{' '}
-              {(result.confidence * 100).toFixed(1)}%
-            </p>
-            <p>
-              <strong>Reasoning:</strong> {result.reasoning}
-            </p>
-            <p>
-              <strong>Next:</strong>{' '}
-              {result.nextStep === 'ask_clarity_questions'
-                ? 'Move to Clarity Questions phase.'
-                : 'Move directly to Planning phase.'}
-            </p>
-          </article>
-        ) : null}
-      </section>
-    </main>
-  )
+  return null
 }
 
 export default App
