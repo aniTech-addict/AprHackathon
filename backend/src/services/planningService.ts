@@ -8,6 +8,7 @@
 
 import { pool } from "../db";
 import { randomUUID } from "crypto";
+import { streamJsonChatCompletion } from "./openRouterClient";
 
 export interface PlanningInput {
   topic: string;
@@ -50,11 +51,6 @@ export interface EditablePlanPayload {
 async function generatePlanWithLLM(
   input: PlanningInput
 ): Promise<ResearchPlan | null> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) return null;
-
-  const model = process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini";
-
   const contextClues = {
     researcher: "deep, original insights for publication",
     student: "comprehensive, well-sourced for academic work",
@@ -105,43 +101,60 @@ Return ONLY valid JSON with this exact schema:
 }`;
 
   try {
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-        "HTTP-Referer": "https://web-researcher-agent.local",
-        "X-Title": "Web Researcher Agent",
+    const result = await streamJsonChatCompletion({
+      operation: "research-planning",
+      model: process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini",
+      temperature: 0.3,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a research planning assistant. Return only valid JSON, no markdown or extra text.",
+        },
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+      responseFormat: {
+        type: "json_schema",
+        jsonSchema: {
+          name: "research_plan",
+          strict: true,
+          schema: {
+            type: "object",
+            properties: {
+              totalPages: { type: "number" },
+              segments: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    order: { type: "number" },
+                    title: { type: "string" },
+                    topic: { type: "string" },
+                    searchQueries: {
+                      type: "array",
+                      items: { type: "string" },
+                    },
+                  },
+                  required: ["order", "title", "topic", "searchQueries"],
+                  additionalProperties: false,
+                },
+              },
+            },
+            required: ["totalPages", "segments"],
+            additionalProperties: false,
+          },
+        },
       },
-      body: JSON.stringify({
-        model,
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are a research planning assistant. Return only valid JSON, no markdown or extra text.",
-          },
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
-        temperature: 0.3,
-      }),
     });
 
-    if (!response.ok) {
+    if (!result) {
       return null;
     }
 
-    const payload = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-
-    const content = payload.choices?.[0]?.message?.content;
-    if (!content) return null;
-
-    const parsed = JSON.parse(content) as {
+    const parsed = JSON.parse(result.content) as {
       totalPages?: number;
       segments?: ResearchSegment[];
     };
