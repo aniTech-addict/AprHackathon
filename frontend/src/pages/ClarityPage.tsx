@@ -98,7 +98,7 @@ export function ClarityPage({
     <main className="shell">
       <header className="hero">
         <p className="eyebrow">Web Researcher Agent</p>
-        <h1>Phase 2B: Clarity Questions</h1>
+        <h1>Phase 2: Clarity Questions</h1>
         <p className="lead">
           Your initial input needs clarification. Please answer these questions to shape the research direction.
         </p>

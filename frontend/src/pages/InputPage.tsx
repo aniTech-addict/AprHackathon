@@ -63,7 +63,7 @@ export function InputPage({ apiBaseUrl, onInputSubmit, onError }: InputPageProps
     <main className="shell">
       <header className="hero">
         <p className="eyebrow">Web Researcher Agent</p>
-        <h1>Phase 2: Input Section</h1>
+        <h1>Phase 1: Input Section</h1>
         <p className="lead">
           Submit the initial research topic. The system classifies it as descriptive or vague and decides whether
           planning can start directly or clarity questions are needed.
