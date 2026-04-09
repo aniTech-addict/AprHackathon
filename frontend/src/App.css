@@ -104,6 +104,10 @@ select.field {
   border-color: #3d85cf;
 }
 
+.small-field {
+  max-width: 140px;
+}
+
 .checkbox-group {
   display: grid;
   gap: 0.6rem;
@@ -224,6 +228,19 @@ select.field {
   padding: 1rem;
 }
 
+.segment-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.8rem;
+  margin-bottom: 0.4rem;
+}
+
+.segment-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
 .segment-card h4 {
   margin: 0 0 0.6rem;
 }
@@ -242,6 +259,43 @@ select.field {
 .segment-card li {
   margin: 0.3rem 0;
   font-size: 0.95rem;
+}
+
+.query-stack {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.query-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.text-button {
+  border: 1px solid #c9d9ea;
+  border-radius: 8px;
+  padding: 0.35rem 0.6rem;
+  font: inherit;
+  background: #f3f8ff;
+  color: #0a3a62;
+  cursor: pointer;
+}
+
+.text-button:hover:not(:disabled) {
+  background: #e7f1fc;
+}
+
+.text-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.text-button.danger {
+  color: #9b1c1c;
+  border-color: #f2b8b8;
+  background: #fff3f3;
 }
 
 .markdown-preview {
@@ -263,6 +317,22 @@ select.field {
   white-space: pre-wrap;
   word-wrap: break-word;
   margin: 0;
+}
+
+.plan-actions {
+  margin-top: 1rem;
+  display: flex;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+
+.success-note {
+  margin-top: 0.8rem;
+  padding: 0.8rem;
+  border-radius: 8px;
+  background: #eafaf1;
+  color: #0d6a44;
+  border-left: 4px solid #0d6a44;
 }
 
 @media (max-width: 900px) {

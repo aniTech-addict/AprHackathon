@@ -20,10 +20,12 @@ export interface ResearchSegment {
 export interface PlanningResponse {
   sessionId: string
   planId: string
+  topic: string
   totalPages: number
   segmentCount: number
   segments: ResearchSegment[]
   planMarkdown: string
+  status?: 'pending_approval' | 'approved'
 }
 
 export interface ResearchState {

@@ -37,6 +37,11 @@ export interface ResearchPlan {
   planMarkdown: string;
 }
 
+export interface EditablePlanPayload {
+  totalPages: number;
+  segments: ResearchSegment[];
+}
+
 /**
  * 
  * @param input 
@@ -146,7 +151,7 @@ Return ONLY valid JSON with this exact schema:
       Array.isArray(parsed.segments) &&
       parsed.segments.length > 0
     ) {
-      const planMarkdown = generateMarkdownPlan(input.topic, {
+      const planMarkdown = buildPlanMarkdown(input.topic, {
         totalPages: parsed.totalPages,
         segments: parsed.segments,
       });
@@ -227,7 +232,7 @@ function generateHeuristicPlan(input: PlanningInput): ResearchPlan {
     },
   ];
 
-  const planMarkdown = generateMarkdownPlan(input.topic, {
+  const planMarkdown = buildPlanMarkdown(input.topic, {
     totalPages: 10,
     segments: defaultSegments,
   });
@@ -239,7 +244,7 @@ function generateHeuristicPlan(input: PlanningInput): ResearchPlan {
   };
 }
 
-function generateMarkdownPlan(
+export function buildPlanMarkdown(
   topic: string,
   plan: { totalPages: number; segments: ResearchSegment[] }
 ): string {
@@ -319,4 +324,91 @@ export async function storePlanInDatabase(
   }
 
   return { planId };
+}
+
+export async function updatePlanDraftInDatabase(
+  sessionId: string,
+  planId: string,
+  topic: string,
+  draft: EditablePlanPayload
+): Promise<{ planMarkdown: string }> {
+  const planMarkdown = buildPlanMarkdown(topic, {
+    totalPages: draft.totalPages,
+    segments: draft.segments,
+  });
+
+  const segmentStructure = draft.segments.map((segment) => ({
+    order: segment.order,
+    title: segment.title,
+    topic: segment.topic,
+  }));
+
+  const flattenedQueries = draft.segments.flatMap(
+    (segment) => segment.searchQueries
+  );
+
+  await pool.query(
+    `
+      UPDATE research_plans
+      SET total_pages = $1,
+          structure = $2::jsonb,
+          plan_markdown = $3,
+          search_queries = $4::jsonb,
+          status = 'pending_approval',
+          updated_at = NOW()
+      WHERE id = $5 AND session_id = $6
+    `,
+    [
+      draft.totalPages,
+      JSON.stringify(segmentStructure),
+      planMarkdown,
+      JSON.stringify(flattenedQueries),
+      planId,
+      sessionId,
+    ]
+  );
+
+  await pool.query(`DELETE FROM segments WHERE research_plan_id = $1`, [planId]);
+
+  for (const segment of draft.segments) {
+    await pool.query(
+      `
+        INSERT INTO segments (id, session_id, research_plan_id, title, topic, segment_order)
+        VALUES ($1, $2, $3, $4, $5, $6)
+      `,
+      [
+        randomUUID(),
+        sessionId,
+        planId,
+        segment.title,
+        segment.topic,
+        segment.order,
+      ]
+    );
+  }
+
+  return { planMarkdown };
+}
+
+export async function approvePlanInDatabase(
+  sessionId: string,
+  planId: string
+): Promise<void> {
+  await pool.query(
+    `
+      UPDATE research_plans
+      SET status = 'approved', updated_at = NOW()
+      WHERE id = $1 AND session_id = $2
+    `,
+    [planId, sessionId]
+  );
+
+  await pool.query(
+    `
+      UPDATE sessions
+      SET status = 'plan_approved', updated_at = NOW()
+      WHERE id = $1
+    `,
+    [sessionId]
+  );
 }
