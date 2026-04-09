@@ -7,6 +7,10 @@ import {
   getSession,
   type ClarityData,
 } from "../../repositories/sessionRepository";
+import {
+  ensureReviewPreview,
+  type PlanStructureSegment,
+} from "../../repositories/reviewPreviewRepository";
 import { decideClarityNextStep } from "../../services/clarityLoopService";
 import { classifyInput } from "../../services/inputClassifier";
 import {
@@ -25,27 +29,6 @@ import type {
   StartResearchBody,
   UpdatePlanBody,
 } from "./types";
-
-interface PlanStructureSegment {
-  order: number;
-  title: string;
-  topic: string;
-}
-
-interface ReviewPreviewSource {
-  id: string;
-  title: string;
-  url: string;
-  excerpt: string;
-}
-
-interface ReviewPreviewParagraph {
-  id: string;
-  order: number;
-  segmentTitle: string;
-  content: string;
-  sources: ReviewPreviewSource[];
-}
 
 function normalizePlanSegments(structure: unknown): PlanStructureSegment[] {
   if (!Array.isArray(structure)) {
@@ -80,46 +63,6 @@ function normalizePlanSegments(structure: unknown): PlanStructureSegment[] {
   }
 
   return segments.sort((a, b) => a.order - b.order);
-}
-
-function buildReviewParagraphContent(
-  sessionTopic: string,
-  segment: PlanStructureSegment,
-): string {
-  return `This paragraph examines ${segment.topic} within the broader research scope of ${sessionTopic}. It highlights the main claims, supporting evidence, and practical implications that should be verified against the linked sources.`;
-}
-
-function buildReviewSources(
-  paragraphId: string,
-  sessionTopic: string,
-  segment: PlanStructureSegment,
-): ReviewPreviewSource[] {
-  const encodedSegment = encodeURIComponent(segment.topic);
-  const encodedTopic = encodeURIComponent(sessionTopic);
-
-  return [
-    {
-      id: `${paragraphId}-source-1`,
-      title: `${segment.title}: Background Reference`,
-      url: `https://scholar.google.com/scholar?q=${encodedSegment}`,
-      excerpt:
-        "Use this source to validate foundational definitions, scope, and baseline evidence for the paragraph.",
-    },
-    {
-      id: `${paragraphId}-source-2`,
-      title: `${segment.title}: Evidence and Trends`,
-      url: `https://news.google.com/search?q=${encodedSegment}`,
-      excerpt:
-        "Use this source to verify current developments, comparative context, and concrete examples tied to the topic.",
-    },
-    {
-      id: `${paragraphId}-source-3`,
-      title: `${segment.title}: Policy and Institutional View`,
-      url: `https://www.google.com/search?q=${encodedTopic}+${encodedSegment}+site%3A.gov+OR+site%3A.edu`,
-      excerpt:
-        "Use this source to cross-check institutional claims, policy framing, and higher-confidence data points.",
-    },
-  ];
 }
 
 /**
@@ -481,16 +424,11 @@ export async function reviewPreviewHandler(
       });
     }
 
-    const paragraphs: ReviewPreviewParagraph[] = segments.map((segment) => {
-      const paragraphId = `segment-${segment.order}`;
-
-      return {
-        id: paragraphId,
-        order: segment.order,
-        segmentTitle: segment.title,
-        content: buildReviewParagraphContent(session.topic, segment),
-        sources: buildReviewSources(paragraphId, session.topic, segment),
-      };
+    const paragraphs = await ensureReviewPreview({
+      sessionId,
+      planId: planRow.id,
+      topic: session.topic,
+      segments,
     });
 
     return res.status(200).json({
