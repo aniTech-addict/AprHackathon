@@ -38,7 +38,29 @@ async function startServer(): Promise<void> {
   });
 }
 
+function logStartupTroubleshooting(error: unknown): void {
+  const asRecord = error as { code?: string; message?: string };
+  const code = asRecord?.code;
+  const message = String(asRecord?.message || "").toLowerCase();
+
+  if (code === "28P01" || message.includes("password authentication failed")) {
+    console.error(
+      "[startup-help] PostgreSQL rejected credentials. If using docker-compose, run 'docker compose down -v' then 'docker compose up -d' to reset credentials to postgres/postgres."
+    );
+    console.error(
+      "[startup-help] Also check if another local PostgreSQL instance is occupying port 5432 and update connection settings if needed."
+    );
+  }
+
+  if (message.includes("client password must be a string")) {
+    console.error(
+      "[startup-help] DATABASE_URL is malformed or missing a password segment. Expected: postgres://user:password@host:port/dbname"
+    );
+  }
+}
+
 startServer().catch((error) => {
+  logStartupTroubleshooting(error);
   console.error("Failed to start backend", error);
   process.exit(1);
 });

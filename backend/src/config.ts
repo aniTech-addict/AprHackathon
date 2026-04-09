@@ -13,7 +13,7 @@ function normalizeEnvString(value: string | undefined): string | undefined {
 }
 
 const envDatabaseUrl = normalizeEnvString(process.env.DATABASE_URL);
-const hardcodedLocalDbUrl = "postgres://postgres:postgres@localhost:5432/web_researcher";
+const hardcodedLocalDbUrl = "postgres://postgres:postgres@127.0.0.1:5433/web_researcher";
 
 export const config = {
     port: Number(process.env.PORT || 4000),
