@@ -91,11 +91,19 @@ router.post("/:sessionId/clarity", async (req, res) => {
     return res.status(404).json({ message: "Session not found." });
   }
 
-  const userBackground = body.userBackground || "student";
+  const userBackground = (body.userBackground || "student") as
+    | "researcher"
+    | "student"
+    | "teacher";
   const researchGoal = (body.researchGoal || "").trim();
-  const sourcePreferences = Array.isArray(body.sourcePreferences)
-    ? body.sourcePreferences
-    : ["reputable_only"];
+  const sourcePreferences = (
+    Array.isArray(body.sourcePreferences) ? body.sourcePreferences : ["reputable_only"]
+  ) as (
+    | "research_papers"
+    | "articles_news"
+    | "academic_papers"
+    | "reputable_only"
+  )[];
 
   if (!researchGoal) {
     return res.status(400).json({
@@ -140,10 +148,23 @@ router.post("/:sessionId/plan-research", async (req, res) => {
       });
     }
 
-    const clarityRow = clarityResult.rows[0];
-    const userBackground = clarityRow.user_background || "student";
-    const sourcePreferences: ("research_papers" | "articles_news" | "academic_papers" | "reputable_only")[] =
-      clarityRow.source_preferences || ["reputable_only"];
+    const clarityRow = clarityResult.rows[0] as {
+      user_background?: string;
+      research_goal?: string;
+      source_preferences?: unknown;
+    };
+    const userBackground = (clarityRow.user_background || "student") as
+      | "researcher"
+      | "student"
+      | "teacher";
+    const sourcePreferences = (
+      (clarityRow.source_preferences as unknown[]) || ["reputable_only"]
+    ) as (
+      | "research_papers"
+      | "articles_news"
+      | "academic_papers"
+      | "reputable_only"
+    )[];
     const endGoal = body.endGoal || "evaluate_and_explain";
 
     const planningInput: PlanningInput = {
