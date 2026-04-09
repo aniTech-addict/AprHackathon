@@ -1,0 +1,77 @@
+.shell {
+  max-width: 1024px;
+  margin: 0 auto;
+  padding: 4rem 1.25rem 3rem;
+}
+
+.hero {
+  margin-bottom: 2.5rem;
+}
+
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #0f5f52;
+  margin-bottom: 0.75rem;
+}
+
+h1 {
+  font-size: clamp(2rem, 4vw, 3.6rem);
+  line-height: 1.03;
+  margin: 0;
+  color: #1a1b1f;
+}
+
+.lead {
+  margin-top: 1rem;
+  max-width: 65ch;
+  color: #2d2f36;
+}
+
+.grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.card {
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(31, 38, 53, 0.16);
+  border-radius: 14px;
+  padding: 1rem;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 28px rgba(17, 29, 56, 0.08);
+}
+
+.card h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.1rem;
+  color: #0a3a62;
+}
+
+.card p {
+  margin: 0;
+  color: #344054;
+}
+
+.card code {
+  display: inline-block;
+  margin-top: 0.8rem;
+  background: #e8f4ff;
+  color: #08345d;
+  padding: 0.35rem 0.55rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+
+@media (max-width: 900px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .shell {
+    padding-top: 2.6rem;
+  }
+}
