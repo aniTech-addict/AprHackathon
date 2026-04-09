@@ -2,6 +2,8 @@
  * Classifies user research input as either "descriptive" or "vague" using a heuristic approach and an optional LLM-based classification via the OpenRouter API.
  */
 
+import { streamJsonChatCompletion } from "./openRouterClient";
+
 
 type InputCategory = "descriptive" | "vague";
 
@@ -59,66 +61,46 @@ function heuristicClassify(input: string): ClassificationResult {
  * @returns {Promise<ClassificationResult | null>} ClassificationResult or null if API call fails or returns invalid response 
  */
 async function classifyWithOpenRouter(input: string): Promise<ClassificationResult | null> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) return null;
-
-  const model = process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini";
-
-  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-      "HTTP-Referer": "https://web-researcher-agent.local",
-      "X-Title": "Web Researcher Agent",
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        {
-          role: "system",
-          content:
-            "Classify user research input as descriptive or vague. Return strict JSON with keys: category, confidence, reasoning.",
-        },
-        {
-          role: "user",
-          content: input,
-        },
-      ],
-      response_format: {
-        type: "json_schema",
-        json_schema: {
-          name: "input_category",
-          strict: true,
-          schema: {
-            type: "object",
-            properties: {
-              category: { type: "string", enum: ["descriptive", "vague"] },
-              confidence: { type: "number", minimum: 0, maximum: 1 },
-              reasoning: { type: "string" },
-            },
-            required: ["category", "confidence", "reasoning"],
-            additionalProperties: false,
+  const result = await streamJsonChatCompletion({
+    operation: "input-classification",
+    model: process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini",
+    temperature: 0.1,
+    messages: [
+      {
+        role: "system",
+        content:
+          "Classify user research input as descriptive or vague. Return strict JSON with keys: category, confidence, reasoning.",
+      },
+      {
+        role: "user",
+        content: input,
+      },
+    ],
+    responseFormat: {
+      type: "json_schema",
+      jsonSchema: {
+        name: "input_category",
+        strict: true,
+        schema: {
+          type: "object",
+          properties: {
+            category: { type: "string", enum: ["descriptive", "vague"] },
+            confidence: { type: "number", minimum: 0, maximum: 1 },
+            reasoning: { type: "string" },
           },
+          required: ["category", "confidence", "reasoning"],
+          additionalProperties: false,
         },
       },
-      temperature: 0.1,
-    }),
+    },
   });
 
-  if (!response.ok) {
+  if (!result) {
     return null;
   }
 
-  const payload = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
-
-  const content = payload.choices?.[0]?.message?.content;
-  if (!content) return null;
-
   try {
-    const parsed = JSON.parse(content) as ClassificationResult;
+    const parsed = JSON.parse(result.content) as ClassificationResult;
     if (
       (parsed.category === "descriptive" || parsed.category === "vague") &&
       typeof parsed.confidence === "number" &&
