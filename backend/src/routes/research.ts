@@ -1,3 +1,9 @@
+// Accepts { topic, preferredSites } from frontend
+// Classifies input (vague/descriptive)
+// Creates session record in PostgreSQL
+// Returns classification + sessionId + nextStep routing decision
+
+
 import { Router } from "express";
 import { randomUUID } from "crypto";
 import { classifyInput } from "../services/inputClassifier";
