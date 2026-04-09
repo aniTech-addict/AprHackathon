@@ -4,17 +4,26 @@ import { useState } from 'react'
 interface ClarityPageProps {
   apiBaseUrl: string
   sessionId: string
+  initialFollowUpQuestions: string[]
+  initialClarityRound: number
   onClarityComplete: () => void
   onError: (error: string) => void
 }
 
-export function ClarityPage({ apiBaseUrl, sessionId, onClarityComplete, onError }: ClarityPageProps) {
+export function ClarityPage({
+  apiBaseUrl,
+  sessionId,
+  initialFollowUpQuestions,
+  initialClarityRound,
+  onClarityComplete,
+  onError,
+}: ClarityPageProps) {
   const [userBackground, setUserBackground] = useState<'researcher' | 'student' | 'teacher'>('student')
   const [researchGoal, setResearchGoal] = useState('')
   const [sourcePreferences, setSourcePreferences] = useState<string[]>(['reputable_only'])
-  const [followUpQuestions, setFollowUpQuestions] = useState<string[]>([])
-  const [followUpAnswers, setFollowUpAnswers] = useState<string[]>([])
-  const [clarityRound, setClarityRound] = useState(1)
+  const [followUpQuestions, setFollowUpQuestions] = useState<string[]>(initialFollowUpQuestions)
+  const [followUpAnswers, setFollowUpAnswers] = useState<string[]>(initialFollowUpQuestions.map(() => ''))
+  const [clarityRound, setClarityRound] = useState(initialClarityRound || 1)
   const [notice, setNotice] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)

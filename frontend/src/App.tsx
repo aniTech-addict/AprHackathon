@@ -8,6 +8,8 @@ import type { Phase, StartResearchResponse } from './types'
 function App() {
   const [currentPhase, setCurrentPhase] = useState<Phase>('input')
   const [sessionId, setSessionId] = useState<string | null>(null)
+  const [initialFollowUpQuestions, setInitialFollowUpQuestions] = useState<string[]>([])
+  const [initialClarityRound, setInitialClarityRound] = useState(1)
   const [_error, setError] = useState<string | null>(null)
 
   const apiBaseUrl = useMemo(
@@ -20,8 +22,12 @@ function App() {
     setError(null)
 
     if (response.nextStep === 'ask_clarity_questions') {
+      setInitialFollowUpQuestions(Array.isArray(response.followUpQuestions) ? response.followUpQuestions : [])
+      setInitialClarityRound(response.clarityRound || 1)
       setCurrentPhase('clarity')
     } else {
+      setInitialFollowUpQuestions([])
+      setInitialClarityRound(1)
       setCurrentPhase('planning')
     }
   }
@@ -44,6 +50,8 @@ function App() {
       <ClarityPage
         apiBaseUrl={apiBaseUrl}
         sessionId={sessionId}
+        initialFollowUpQuestions={initialFollowUpQuestions}
+        initialClarityRound={initialClarityRound}
         onClarityComplete={handleClarityComplete}
         onError={handleError}
       />

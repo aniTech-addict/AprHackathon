@@ -8,6 +8,8 @@ export interface StartResearchResponse {
   confidence: number
   reasoning: string
   nextStep: 'ask_clarity_questions' | 'generate_research_plan'
+  followUpQuestions?: string[]
+  clarityRound?: number
 }
 
 export interface ResearchSegment {

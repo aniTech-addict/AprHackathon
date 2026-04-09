@@ -29,6 +29,12 @@ interface StartResearchBody {
   preferredSites?: string[];
 }
 
+const defaultClarityQuestions = [
+  "What specific outcome do you want from this research (report, comparison, recommendations, or summary)?",
+  "What scope should we prioritize (time range, region, industry, or population)?",
+  "What evidence quality do you prefer (peer-reviewed studies, policy reports, news, or mixed sources)?",
+];
+
 interface ClarityBody {
   userBackground?: "researcher" | "student" | "teacher";
   researchGoal?: string;
@@ -120,16 +126,51 @@ router.post("/start", async (req, res) => {
     preferredSites,
   });
 
+  let nextStep: "ask_clarity_questions" | "generate_research_plan" =
+    classification.category === "vague"
+      ? "ask_clarity_questions"
+      : "generate_research_plan";
+  let followUpQuestions: string[] = [];
+  let clarityRound = 1;
+
+  if (classification.category === "vague") {
+    try {
+      const clarityDecision = await decideClarityNextStep({
+        topic,
+        userBackground: "student",
+        researchGoal: "",
+        sourcePreferences: [],
+        followUpResponses: [],
+        clarityRound: 1,
+      });
+
+      if (
+        clarityDecision.nextStep === "ask_clarity_questions" &&
+        clarityDecision.followUpQuestions.length > 0
+      ) {
+        followUpQuestions = clarityDecision.followUpQuestions;
+        clarityRound = clarityDecision.clarityRound;
+      } else {
+        // Keep vague inputs in the clarity flow with deterministic starter questions.
+        followUpQuestions = defaultClarityQuestions;
+        clarityRound = 2;
+      }
+    } catch (error) {
+      console.error("[research-start] Failed to generate initial clarity questions; using defaults.", error);
+      followUpQuestions = defaultClarityQuestions;
+      clarityRound = 2;
+    }
+  }
+
   return res.status(201).json({
     sessionId,
     topic,
     inputCategory: classification.category,
     confidence: classification.confidence,
     reasoning: classification.reasoning,
-    nextStep:
-      classification.category === "vague"
-        ? "ask_clarity_questions"
-        : "generate_research_plan",
+    nextStep,
+    followUpQuestions,
+    clarityRound,
   });
 });
 
