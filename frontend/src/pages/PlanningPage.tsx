@@ -1,4 +1,4 @@
-import type { FormEvent } from 'react'
+import type { FormEvent, MouseEvent as ReactMouseEvent } from 'react'
 import { useState } from 'react'
 import type { PlanningResponse, ResearchSegment } from '../types'
 
@@ -42,6 +42,7 @@ export function PlanningPage({ apiBaseUrl, sessionId, onError }: PlanningPagePro
   const [isApproving, setIsApproving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [editorWidthPercent, setEditorWidthPercent] = useState(58)
   const [planData, setPlanData] = useState<PlanningResponse | null>(null)
   const [editablePlan, setEditablePlan] = useState<{
     totalPages: number
@@ -148,6 +149,32 @@ export function PlanningPage({ apiBaseUrl, sessionId, onError }: PlanningPagePro
       })),
     }
     return normalized
+  }
+
+  function clampWidth(value: number) {
+    return Math.max(35, Math.min(75, value))
+  }
+
+  function handleResizeStart(event: ReactMouseEvent<HTMLDivElement>) {
+    event.preventDefault()
+    const container = event.currentTarget.parentElement
+    if (!container) return
+
+    const rect = container.getBoundingClientRect()
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const cursorX = moveEvent.clientX - rect.left
+      const nextWidth = (cursorX / rect.width) * 100
+      setEditorWidthPercent(clampWidth(nextWidth))
+    }
+
+    const handleMouseUp = () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+    }
+
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
   }
 
   async function handlePlanning(event: FormEvent<HTMLFormElement>) {
@@ -329,155 +356,175 @@ export function PlanningPage({ apiBaseUrl, sessionId, onError }: PlanningPagePro
       </header>
 
       <section className="card">
-        <h2>Plan Overview</h2>
-        <label htmlFor="total-pages" className="label">
-          Total Pages
-        </label>
-        <input
-          id="total-pages"
-          className="field small-field"
-          type="number"
-          min={1}
-          value={editablePlan?.totalPages ?? planData.totalPages}
-          onChange={(event) => {
-            if (!editablePlan) return
-            setEditablePlan({
-              ...editablePlan,
-              totalPages: Number(event.target.value || 1),
-            })
+        <div
+          className="plan-two-col"
+          style={{
+            gridTemplateColumns: `${editorWidthPercent}% 10px minmax(0, 1fr)`,
           }}
-        />
-        <p>
-          <strong>Segments:</strong> {editablePlan?.segments.length ?? planData.segmentCount}
-        </p>
+        >
+          <div className="plan-editor-col">
+            <h2>Plan Overview</h2>
+            <label htmlFor="total-pages" className="label">
+              Total Pages
+            </label>
+            <input
+              id="total-pages"
+              className="field small-field"
+              type="number"
+              min={1}
+              value={editablePlan?.totalPages ?? planData.totalPages}
+              onChange={(event) => {
+                if (!editablePlan) return
+                setEditablePlan({
+                  ...editablePlan,
+                  totalPages: Number(event.target.value || 1),
+                })
+              }}
+            />
+            <p>
+              <strong>Segments:</strong> {editablePlan?.segments.length ?? planData.segmentCount}
+            </p>
 
-        <h3>Segmented Outline</h3>
-        <div className="segments-list">
-          {(editablePlan?.segments || planData.segments).map((segment, segmentIndex) => (
-            <article key={segment.order} className="segment-card">
-              <div className="segment-header-row">
-                <h4>Segment {segment.order}</h4>
-                <div className="segment-actions">
-                  <button
-                    type="button"
-                    className="text-button"
-                    onClick={() => moveSegment(segmentIndex, 'up')}
-                    disabled={segmentIndex === 0 || !canEdit}
-                  >
-                    Up
-                  </button>
-                  <button
-                    type="button"
-                    className="text-button"
-                    onClick={() => moveSegment(segmentIndex, 'down')}
-                    disabled={
-                      segmentIndex === (editablePlan?.segments.length || planData.segments.length) - 1 ||
-                      !canEdit
+            <h3>Segmented Outline</h3>
+            <div className="segments-list">
+              {(editablePlan?.segments || planData.segments).map((segment, segmentIndex) => (
+                <article key={segment.order} className="segment-card">
+                  <div className="segment-header-row">
+                    <h4>Segment {segment.order}</h4>
+                    <div className="segment-actions">
+                      <button
+                        type="button"
+                        className="text-button"
+                        onClick={() => moveSegment(segmentIndex, 'up')}
+                        disabled={segmentIndex === 0 || !canEdit}
+                      >
+                        Up
+                      </button>
+                      <button
+                        type="button"
+                        className="text-button"
+                        onClick={() => moveSegment(segmentIndex, 'down')}
+                        disabled={
+                          segmentIndex === (editablePlan?.segments.length || planData.segments.length) - 1 ||
+                          !canEdit
+                        }
+                      >
+                        Down
+                      </button>
+                      <button
+                        type="button"
+                        className="text-button danger"
+                        onClick={() => removeSegment(segmentIndex)}
+                        disabled={!canEdit || (editablePlan?.segments.length || 0) <= 1}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+
+                  <label className="label">Title</label>
+                  <input
+                    className="field"
+                    value={segment.title}
+                    onChange={(event) =>
+                      updateSegment(segmentIndex, {
+                        ...segment,
+                        title: event.target.value,
+                      })
                     }
-                  >
-                    Down
-                  </button>
-                  <button
-                    type="button"
-                    className="text-button danger"
-                    onClick={() => removeSegment(segmentIndex)}
-                    disabled={!canEdit || (editablePlan?.segments.length || 0) <= 1}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
+                  />
 
-              <label className="label">Title</label>
-              <input
-                className="field"
-                value={segment.title}
-                onChange={(event) =>
-                  updateSegment(segmentIndex, {
-                    ...segment,
-                    title: event.target.value,
-                  })
-                }
-              />
+                  <label className="label">Topic</label>
+                  <textarea
+                    className="field"
+                    rows={3}
+                    value={segment.topic}
+                    onChange={(event) =>
+                      updateSegment(segmentIndex, {
+                        ...segment,
+                        topic: event.target.value,
+                      })
+                    }
+                  />
 
-              <label className="label">Topic</label>
-              <textarea
-                className="field"
-                rows={3}
-                value={segment.topic}
-                onChange={(event) =>
-                  updateSegment(segmentIndex, {
-                    ...segment,
-                    topic: event.target.value,
-                  })
-                }
-              />
-
-              <p className="hint">
-                <strong>Search Queries</strong>
-              </p>
-              <div className="query-stack">
-                {segment.searchQueries.map((query, queryIndex) => (
-                  <div key={`${segment.order}-${queryIndex}`} className="query-row">
-                    <input
-                      className="field"
-                      value={query}
-                      onChange={(event) =>
-                        updateQuery(segmentIndex, queryIndex, event.target.value)
-                      }
-                    />
-                    <button
-                      type="button"
-                      className="text-button danger"
-                      onClick={() => removeQuery(segmentIndex, queryIndex)}
-                      disabled={segment.searchQueries.length <= 1}
-                    >
-                      Remove
+                  <p className="hint">
+                    <strong>Search Queries</strong>
+                  </p>
+                  <div className="query-stack">
+                    {segment.searchQueries.map((query, queryIndex) => (
+                      <div key={`${segment.order}-${queryIndex}`} className="query-row">
+                        <input
+                          className="field"
+                          value={query}
+                          onChange={(event) =>
+                            updateQuery(segmentIndex, queryIndex, event.target.value)
+                          }
+                        />
+                        <button
+                          type="button"
+                          className="text-button danger"
+                          onClick={() => removeQuery(segmentIndex, queryIndex)}
+                          disabled={segment.searchQueries.length <= 1}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                    <button type="button" className="text-button" onClick={() => addQuery(segmentIndex)}>
+                      + Add Query
                     </button>
                   </div>
-                ))}
-                <button type="button" className="text-button" onClick={() => addQuery(segmentIndex)}>
-                  + Add Query
-                </button>
-              </div>
-            </article>
-          ))}
+                </article>
+              ))}
+            </div>
+
+            <button type="button" className="text-button" onClick={addSegment}>
+              + Add Segment
+            </button>
+
+            <div className="plan-actions">
+              <button
+                type="button"
+                className="button"
+                onClick={handleSaveDraft}
+                disabled={isSavingDraft || isApproving}
+              >
+                {isSavingDraft ? 'Saving Draft...' : 'Save Draft'}
+              </button>
+              <button
+                type="button"
+                className="button"
+                onClick={handleApprovePlan}
+                disabled={isApproving || isSavingDraft || planData.status === 'approved'}
+              >
+                {isApproving
+                  ? 'Approving...'
+                  : planData.status === 'approved'
+                    ? 'Plan Approved'
+                    : 'Approve Plan & Start Research'}
+              </button>
+            </div>
+
+            {notice ? <p className="success-note">{notice}</p> : null}
+            {error ? <p className="error">{error}</p> : null}
+          </div>
+
+          <div
+            className="col-resizer"
+            role="separator"
+            aria-label="Resize plan editor and markdown preview"
+            aria-orientation="vertical"
+            onMouseDown={handleResizeStart}
+            title="Drag to resize columns"
+          />
+
+          <aside className="plan-preview-col">
+            <div className="markdown-preview">
+              <h3>Plan Markdown</h3>
+              <pre className="code-block">{liveMarkdown}</pre>
+            </div>
+          </aside>
         </div>
-
-        <button type="button" className="text-button" onClick={addSegment}>
-          + Add Segment
-        </button>
-
-        <div className="markdown-preview">
-          <h3>Plan Markdown</h3>
-          <pre className="code-block">{liveMarkdown}</pre>
-        </div>
-
-        <div className="plan-actions">
-          <button
-            type="button"
-            className="button"
-            onClick={handleSaveDraft}
-            disabled={isSavingDraft || isApproving}
-          >
-            {isSavingDraft ? 'Saving Draft...' : 'Save Draft'}
-          </button>
-          <button
-            type="button"
-            className="button"
-            onClick={handleApprovePlan}
-            disabled={isApproving || isSavingDraft || planData.status === 'approved'}
-          >
-            {isApproving
-              ? 'Approving...'
-              : planData.status === 'approved'
-                ? 'Plan Approved'
-                : 'Approve Plan & Start Research'}
-          </button>
-        </div>
-
-        {notice ? <p className="success-note">{notice}</p> : null}
-        {error ? <p className="error">{error}</p> : null}
       </section>
     </main>
   )
