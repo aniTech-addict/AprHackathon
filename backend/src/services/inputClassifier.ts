@@ -69,11 +69,11 @@ async function classifyWithOpenRouter(input: string): Promise<ClassificationResu
       {
         role: "system",
         content:
-          "Classify user research input as descriptive or vague. Return strict JSON with keys: category, confidence, reasoning.",
+          "You classify research prompts for planning readiness. Label input as 'descriptive' or 'vague'. Descriptive means the input contains clear objective plus at least one useful scope detail (timeframe, geography, audience, comparison, or source constraint). Vague means broad/ambiguous input that still needs clarification. Return strict JSON only matching the provided schema. Keep reasoning concise (max 20 words).",
       },
       {
         role: "user",
-        content: input,
+        content: `Classify this user input:\n\n${input}`,
       },
     ],
     responseFormat: {
@@ -96,6 +96,7 @@ async function classifyWithOpenRouter(input: string): Promise<ClassificationResu
   });
 
   if (!result) {
+    console.error("[input-classification] OpenRouter returned no result; falling back to heuristics.");
     return null;
   }
 
@@ -108,7 +109,9 @@ async function classifyWithOpenRouter(input: string): Promise<ClassificationResu
     ) {
       return parsed;
     }
+    console.error("[input-classification] OpenRouter returned invalid JSON shape:", result.content);
   } catch (_error) {
+    console.error("[input-classification] Failed to parse OpenRouter response:", result.content);
     return null;
   }
 
@@ -124,11 +127,12 @@ export async function classifyInput(input: string): Promise<ClassificationResult
   try {
     const llmResult = await classifyWithOpenRouter(input);
     if (llmResult) return llmResult;
-  } catch (_error) {
-    // Fallback is intentional for local development without external providers.
+  } catch (error) {
+    console.error("[input-classification] OpenRouter classification failed; using heuristic fallback:", error);
   }
   
   // if api key is not configured, return heuristic classification result immediately without calling external API
+  console.error("[input-classification] Using heuristic classification fallback.");
   return heuristicClassify(input);
 }
 

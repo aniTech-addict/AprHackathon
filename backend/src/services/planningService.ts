@@ -73,21 +73,48 @@ async function generatePlanWithLLM(
     reputable_only: "Only use established, reputable sources (.edu, .gov, etc).",
   };
 
-  const prompt = `You are a research planning expert. Generate a detailed research plan for the following topic:
+  const prompt = `You are designing the execution blueprint for a multi-step research workflow.
+The quality of this plan directly determines downstream research outcomes.
 
-Topic: ${input.topic}
+Research topic:
+${input.topic}
 
-User Profile:
+User profile and intent:
 - Background: ${input.userBackground} (needs ${contextClues[input.userBackground]})
-- End Goal: ${goalClues[input.endGoal]}
-- Source Preferences: ${input.sourcePreferences.map((p) => sourceClues[p as keyof typeof sourceClues]).join("; ")}
+- End goal: ${goalClues[input.endGoal]}
+- Source preferences: ${input.sourcePreferences.map((p) => sourceClues[p as keyof typeof sourceClues]).join("; ")}
 
-Generate a research plan with:
-1. An estimated page count (5-15 pages)
-2. 5-10 segment titles and topics
-3. For each segment, 2-3 targeted search queries
+What the plan should optimize for:
+- Clarity: each segment should answer a specific research question.
+- Coverage: the full set of segments should cover foundations, evidence, analysis, and implications.
+- Efficiency: avoid redundant segments and overlapping queries.
+- Evidence quality: favor credible, verifiable, and goal-aligned sources.
 
-Return ONLY valid JSON with this exact schema:
+Planning constraints:
+- totalPages must be an integer from 5 to 15.
+- Provide 5 to 10 segments.
+- Segment order must be contiguous, starting at 1.
+- Segment titles must be distinct, descriptive, and progression-oriented.
+- Segment topics must be specific, scoped, and non-overlapping.
+- Each segment must include 2 to 3 targeted search queries.
+- Search queries should be investigation-ready and include useful qualifiers where relevant:
+  region, timeframe, actor/stakeholder, method, policy, dataset, metric, or comparison.
+- Avoid vague query phrasing such as "overview", "everything about", or "general info".
+- Respect source preferences in query wording.
+
+Expected segment progression (adapt as needed to the topic):
+1) Core context and terminology
+2) Historical or structural background
+3) Current landscape and key actors
+4) Evidence and data deep-dive
+5) Competing perspectives / trade-offs
+6) Case studies or comparative examples
+7) Synthesis and implications aligned to the user's end goal
+
+Output rules:
+- Return only valid JSON.
+- Do not include markdown, comments, or explanatory prose.
+- Must match this schema exactly:
 {
   "totalPages": number,
   "segments": [
@@ -109,7 +136,7 @@ Return ONLY valid JSON with this exact schema:
         {
           role: "system",
           content:
-            "You are a research planning assistant. Return only valid JSON, no markdown or extra text.",
+            "You are a senior research architect. Produce practical, coherent, and non-overlapping research plans. Return strict JSON only.",
         },
         {
           role: "user",
@@ -174,7 +201,8 @@ Return ONLY valid JSON with this exact schema:
         planMarkdown,
       };
     }
-  } catch (_error) {
+  } catch (error) {
+    console.error("[research-planning] OpenRouter planning failed; falling back to heuristic plan.", error);
     return null;
   }
 
@@ -291,10 +319,11 @@ export async function generateResearchPlan(
   try {
     const llmPlan = await generatePlanWithLLM(input);
     if (llmPlan) return llmPlan;
-  } catch (_error) {
-    // Fallback to heuristic
+  } catch (error) {
+    console.error("[research-planning] LLM planning threw; falling back to heuristic plan.", error);
   }
 
+  console.error("[research-planning] Using heuristic plan fallback.");
   return generateHeuristicPlan(input);
 }
 

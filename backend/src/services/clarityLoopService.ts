@@ -37,27 +37,30 @@ function normalizeQuestions(questions: unknown): string[] {
 async function evaluateWithLlm(
   input: ClarityLoopInput
 ): Promise<LlmClarityResult | null> {
-  const prompt = `Determine if the user has provided enough clarity to generate a research plan.
+  const prompt = `Decide whether there is enough information to generate a strong research plan.
 
-Topic: ${input.topic}
-User Background: ${input.userBackground}
-Research Goal: ${input.researchGoal}
-Source Preferences: ${input.sourcePreferences.join(", ")}
-Clarity Round: ${input.clarityRound}
-Follow-up Responses: ${input.followUpResponses.join(" | ") || "none"}
+Context:
+- Topic: ${input.topic}
+- User background: ${input.userBackground}
+- Research goal: ${input.researchGoal}
+- Source preferences: ${input.sourcePreferences.join(", ") || "none"}
+- Clarification round: ${input.clarityRound}
+- User follow-up responses so far: ${input.followUpResponses.join(" | ") || "none"}
 
-Rules:
-- If details are still vague, return needsMoreClarification=true and provide 1 to 3 targeted questions.
-- Questions must be concrete and answerable in 1-2 sentences.
-- If clarity is enough, return needsMoreClarification=false and no questions.
-- Keep questions specific to planning quality.
+Decision criteria:
+- Mark needsMoreClarification=true if key planning details are missing, such as objective precision, scope boundaries, comparison dimension, audience/use-case, or evidence constraints.
+- Mark needsMoreClarification=false only if there is enough detail to create focused segments and specific search queries.
 
-Return strict JSON only with:
-{
-  "needsMoreClarification": boolean,
-  "followUpQuestions": string[],
-  "reasoning": string
-}`;
+Question rules when clarification is needed:
+- Ask 1 to 3 highly targeted questions.
+- Questions must be answerable in 1 to 2 sentences.
+- Do not repeat details already provided in follow-up responses.
+- Prefer questions that directly improve plan quality (scope, constraints, deliverable expectations).
+
+Output rules:
+- Return strict JSON only with keys: needsMoreClarification, followUpQuestions, reasoning.
+- If needsMoreClarification=false, followUpQuestions must be an empty array.
+- Keep reasoning concise (max 24 words).`;
 
   try {
     const result = await streamJsonChatCompletion({
@@ -68,7 +71,7 @@ Return strict JSON only with:
         {
           role: "system",
           content:
-            "You evaluate research intent clarity. Return JSON only, no markdown.",
+            "You are a clarity evaluator for a research planning assistant. Follow the user instructions exactly and output strict JSON only.",
         },
         {
           role: "user",
@@ -105,6 +108,8 @@ Return strict JSON only with:
       reasoning?: string;
     };
 
+    console.log (parsed.needsMoreClarification);
+    
     if (typeof parsed.needsMoreClarification !== "boolean") return null;
 
     return {
@@ -112,7 +117,8 @@ Return strict JSON only with:
       followUpQuestions: normalizeQuestions(parsed.followUpQuestions),
       reasoning: String(parsed.reasoning || "").trim(),
     };
-  } catch (_error) {
+  } catch (error) {
+    console.error("[clarity-loop] OpenRouter clarity evaluation failed; falling back to direct continuation.", error);
     return null;
   }
 }
@@ -124,6 +130,7 @@ export async function decideClarityNextStep(
   const hasLlm = Boolean(process.env.OPENROUTER_API_KEY);
 
   if (!hasLlm) {
+    console.error("[clarity-loop] OPENROUTER_API_KEY is missing; skipping LLM clarification loop.");
     return {
       nextStep: "generate_research_plan",
       followUpQuestions: [],
