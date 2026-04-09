@@ -26,6 +26,109 @@ import type {
   UpdatePlanBody,
 } from "./types";
 
+interface PlanStructureSegment {
+  order: number;
+  title: string;
+  topic: string;
+}
+
+interface ReviewPreviewSource {
+  id: string;
+  title: string;
+  url: string;
+  excerpt: string;
+}
+
+interface ReviewPreviewParagraph {
+  id: string;
+  order: number;
+  segmentTitle: string;
+  content: string;
+  sources: ReviewPreviewSource[];
+}
+
+function normalizePlanSegments(structure: unknown): PlanStructureSegment[] {
+  if (!Array.isArray(structure)) {
+    return [];
+  }
+
+  const segments: PlanStructureSegment[] = [];
+  for (const entry of structure) {
+    if (!entry || typeof entry !== "object") {
+      continue;
+    }
+
+    const segment = entry as {
+      order?: unknown;
+      title?: unknown;
+      topic?: unknown;
+    };
+
+    const order = Number(segment.order);
+    const title = String(segment.title || "").trim();
+    const topic = String(segment.topic || "").trim();
+
+    if (!Number.isFinite(order) || order < 1 || !title || !topic) {
+      continue;
+    }
+
+    segments.push({
+      order,
+      title,
+      topic,
+    });
+  }
+
+  return segments.sort((a, b) => a.order - b.order);
+}
+
+function buildReviewParagraphContent(
+  sessionTopic: string,
+  segment: PlanStructureSegment,
+): string {
+  return `This paragraph examines ${segment.topic} within the broader research scope of ${sessionTopic}. It highlights the main claims, supporting evidence, and practical implications that should be verified against the linked sources.`;
+}
+
+function buildReviewSources(
+  paragraphId: string,
+  sessionTopic: string,
+  segment: PlanStructureSegment,
+): ReviewPreviewSource[] {
+  const encodedSegment = encodeURIComponent(segment.topic);
+  const encodedTopic = encodeURIComponent(sessionTopic);
+
+  return [
+    {
+      id: `${paragraphId}-source-1`,
+      title: `${segment.title}: Background Reference`,
+      url: `https://scholar.google.com/scholar?q=${encodedSegment}`,
+      excerpt:
+        "Use this source to validate foundational definitions, scope, and baseline evidence for the paragraph.",
+    },
+    {
+      id: `${paragraphId}-source-2`,
+      title: `${segment.title}: Evidence and Trends`,
+      url: `https://news.google.com/search?q=${encodedSegment}`,
+      excerpt:
+        "Use this source to verify current developments, comparative context, and concrete examples tied to the topic.",
+    },
+    {
+      id: `${paragraphId}-source-3`,
+      title: `${segment.title}: Policy and Institutional View`,
+      url: `https://www.google.com/search?q=${encodedTopic}+${encodedSegment}+site%3A.gov+OR+site%3A.edu`,
+      excerpt:
+        "Use this source to cross-check institutional claims, policy framing, and higher-confidence data points.",
+    },
+  ];
+}
+
+/**
+ * 
+ * @param req {Request} : Contains the topic and preferred sites for starting a research session.
+ * the topic is classified as either 'descriptive' or 'vague'. If 'vague', follow-up clarity questions are generated. 
+ * @param res 
+ * @returns 
+ */
 export async function startResearchHandler(
   req: Request,
   res: Response,
@@ -317,10 +420,90 @@ export async function approvePlanHandler(
       sessionId,
       planId,
       status: "approved",
-      nextStep: "research_segment_cycles",
+      nextStep: "review_preview",
     });
   } catch (error) {
     console.error("Error approving plan:", error);
     return res.status(500).json({ message: "Failed to approve plan." });
+  }
+}
+
+export async function reviewPreviewHandler(
+  req: Request,
+  res: Response,
+): Promise<Response> {
+  const sessionId = String(req.params.sessionId || "");
+  const requestedPlanId = String(req.query.planId || "").trim();
+
+  const session = await getSession(sessionId);
+  if (!session) {
+    return res.status(404).json({ message: "Session not found." });
+  }
+
+  try {
+    const planResult = requestedPlanId
+      ? await pool.query(
+          `
+          SELECT id, structure, status
+          FROM research_plans
+          WHERE session_id = $1 AND id = $2
+          LIMIT 1
+        `,
+          [sessionId, requestedPlanId],
+        )
+      : await pool.query(
+          `
+          SELECT id, structure, status
+          FROM research_plans
+          WHERE session_id = $1
+          ORDER BY CASE WHEN status = 'approved' THEN 0 ELSE 1 END, updated_at DESC
+          LIMIT 1
+        `,
+          [sessionId],
+        );
+
+    if (planResult.rows.length === 0) {
+      return res.status(404).json({
+        message: "No research plan found for review preview.",
+      });
+    }
+
+    const planRow = planResult.rows[0] as {
+      id: string;
+      structure: unknown;
+      status: string;
+    };
+
+    const segments = normalizePlanSegments(planRow.structure);
+    if (segments.length === 0) {
+      return res.status(404).json({
+        message: "No plan segments available for review preview.",
+      });
+    }
+
+    const paragraphs: ReviewPreviewParagraph[] = segments.map((segment) => {
+      const paragraphId = `segment-${segment.order}`;
+
+      return {
+        id: paragraphId,
+        order: segment.order,
+        segmentTitle: segment.title,
+        content: buildReviewParagraphContent(session.topic, segment),
+        sources: buildReviewSources(paragraphId, session.topic, segment),
+      };
+    });
+
+    return res.status(200).json({
+      sessionId,
+      planId: planRow.id,
+      topic: session.topic,
+      planStatus: planRow.status,
+      paragraphs,
+    });
+  } catch (error) {
+    console.error("Error generating review preview:", error);
+    return res.status(500).json({
+      message: "Failed to load review preview.",
+    });
   }
 }
