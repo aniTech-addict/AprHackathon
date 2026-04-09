@@ -2,6 +2,8 @@
 // it would make sense that we skip it when we are not using llm api , but when we are...
 // we do need to ask in loop for clarification questions before moving forward
 
+import { streamJsonChatCompletion } from "./openRouterClient";
+
 export interface ClarityLoopInput {
   topic: string;
   userBackground: "researcher" | "student" | "teacher";
@@ -35,11 +37,6 @@ function normalizeQuestions(questions: unknown): string[] {
 async function evaluateWithLlm(
   input: ClarityLoopInput
 ): Promise<LlmClarityResult | null> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) return null;
-
-  const model = process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini";
-
   const prompt = `Determine if the user has provided enough clarity to generate a research plan.
 
 Topic: ${input.topic}
@@ -63,41 +60,46 @@ Return strict JSON only with:
 }`;
 
   try {
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-        "HTTP-Referer": "https://web-researcher-agent.local",
-        "X-Title": "Web Researcher Agent",
+    const result = await streamJsonChatCompletion({
+      operation: "clarity-loop",
+      model: process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini",
+      temperature: 0.2,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You evaluate research intent clarity. Return JSON only, no markdown.",
+        },
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+      responseFormat: {
+        type: "json_schema",
+        jsonSchema: {
+          name: "clarity_loop",
+          strict: true,
+          schema: {
+            type: "object",
+            properties: {
+              needsMoreClarification: { type: "boolean" },
+              followUpQuestions: {
+                type: "array",
+                items: { type: "string" },
+              },
+              reasoning: { type: "string" },
+            },
+            required: ["needsMoreClarification", "followUpQuestions", "reasoning"],
+            additionalProperties: false,
+          },
+        },
       },
-      body: JSON.stringify({
-        model,
-        messages: [
-          {
-            role: "system",
-            content:
-              "You evaluate research intent clarity. Return JSON only, no markdown.",
-          },
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
-        temperature: 0.2,
-      }),
     });
 
-    if (!response.ok) return null;
+    if (!result) return null;
 
-    const payload = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-
-    const content = payload.choices?.[0]?.message?.content;
-    if (!content) return null;
-
-    const parsed = JSON.parse(content) as {
+    const parsed = JSON.parse(result.content) as {
       needsMoreClarification?: boolean;
       followUpQuestions?: unknown;
       reasoning?: string;
