@@ -8,7 +8,7 @@ import type { Phase, StartResearchResponse } from './types'
 function App() {
   const [currentPhase, setCurrentPhase] = useState<Phase>('input')
   const [sessionId, setSessionId] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [_error, setError] = useState<string | null>(null)
 
   const apiBaseUrl = useMemo(
     () => import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000',
