@@ -19,6 +19,5 @@ export const config = {
     port: Number(process.env.PORT || 4000),
     nodeEnv: process.env.NODE_ENV || "development",
     openRouterApiKey: process.env.OPENROUTER_API_KEY || null,
-    // Temporary hardcoded DB URL for local development stability.
-    dbUrl: hardcodedLocalDbUrl,
+    dbUrl: envDatabaseUrl || hardcodedLocalDbUrl,
 };
