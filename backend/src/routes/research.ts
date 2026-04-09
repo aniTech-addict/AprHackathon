@@ -142,9 +142,8 @@ router.post("/:sessionId/plan-research", async (req, res) => {
 
     const clarityRow = clarityResult.rows[0];
     const userBackground = clarityRow.user_background || "student";
-    const sourcePreferences = clarityRow.source_preferences || [
-      "reputable_only",
-    ];
+    const sourcePreferences: ("research_papers" | "articles_news" | "academic_papers" | "reputable_only")[] =
+      clarityRow.source_preferences || ["reputable_only"];
     const endGoal = body.endGoal || "evaluate_and_explain";
 
     const planningInput: PlanningInput = {
