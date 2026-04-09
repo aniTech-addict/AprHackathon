@@ -1,5 +1,5 @@
 export type InputCategory = 'descriptive' | 'vague'
-export type Phase = 'input' | 'clarity' | 'planning'
+export type Phase = 'input' | 'clarity' | 'planning' | 'review'
 
 export interface StartResearchResponse {
   sessionId: string
@@ -38,4 +38,27 @@ export interface ResearchState {
   sourcePreferences: string[]
   endGoal: 'propose_solutions' | 'evaluate_and_explain' | 'explore_current_approaches'
   planData: PlanningResponse | null
+}
+
+export interface ReviewSource {
+  id: string
+  title: string
+  url: string
+  excerpt: string
+}
+
+export interface ReviewParagraph {
+  id: string
+  order: number
+  segmentTitle: string
+  content: string
+  sources: ReviewSource[]
+}
+
+export interface ReviewPreviewResponse {
+  sessionId: string
+  planId: string
+  topic: string
+  planStatus: string
+  paragraphs: ReviewParagraph[]
 }

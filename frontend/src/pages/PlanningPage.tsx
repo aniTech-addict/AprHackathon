@@ -7,6 +7,7 @@ interface PlanningPageProps {
   apiBaseUrl: string
   sessionId: string
   onError: (error: string) => void
+  onPlanApproved: (sessionId: string, planId: string) => void
 }
 
 function buildPlanMarkdown(topic: string, totalPages: number, segments: ResearchSegment[]) {
@@ -34,7 +35,7 @@ function buildPlanMarkdown(topic: string, totalPages: number, segments: Research
   return lines.join('\n')
 }
 
-export function PlanningPage({ apiBaseUrl, sessionId, onError }: PlanningPageProps) {
+export function PlanningPage({ apiBaseUrl, sessionId, onError, onPlanApproved }: PlanningPageProps) {
   const [endGoal, setEndGoal] = useState<
     'propose_solutions' | 'evaluate_and_explain' | 'explore_current_approaches'
   >('evaluate_and_explain')
@@ -259,8 +260,15 @@ export function PlanningPage({ apiBaseUrl, sessionId, onError }: PlanningPagePro
         throw new Error(payload.message || 'Failed to approve plan.')
       }
 
+      const payload = (await response.json()) as {
+        sessionId: string
+        planId: string
+        status: 'approved'
+      }
+
       setPlanData({ ...planData, status: 'approved' })
-      setNotice('Plan approved. Next phase is ready for segmented research cycles.')
+      setNotice('Plan approved. Opening Phase 4 source review preview.')
+      onPlanApproved(payload.sessionId, payload.planId)
     } catch (approveError) {
       const errorMsg =
         approveError instanceof Error ? approveError.message : 'Unexpected error while approving plan.'
