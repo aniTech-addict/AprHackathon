@@ -22,6 +22,7 @@ import {
   type PlanningInput,
   type ResearchSegment,
 } from "../services/planningService";
+import { decideClarityNextStep } from "../services/clarityLoopService";
 
 interface StartResearchBody {
   topic?: string;
@@ -37,6 +38,8 @@ interface ClarityBody {
     | "academic_papers"
     | "reputable_only"
   )[];
+  clarityRound?: number;
+  followUpResponses?: string[];
 }
 
 interface PlanResearchBody {
@@ -152,6 +155,10 @@ router.post("/:sessionId/clarity", async (req, res) => {
     | "academic_papers"
     | "reputable_only"
   )[];
+  const clarityRound = Number(body.clarityRound || 1);
+  const followUpResponses = Array.isArray(body.followUpResponses)
+    ? body.followUpResponses.map((entry) => String(entry || "").trim()).filter(Boolean)
+    : [];
 
   if (!researchGoal) {
     return res.status(400).json({
@@ -159,18 +166,33 @@ router.post("/:sessionId/clarity", async (req, res) => {
     });
   }
 
+  const combinedResearchGoal = [researchGoal, ...followUpResponses]
+    .filter(Boolean)
+    .join("\n\n");
+
   const clarity: ClarityData = {
     userBackground,
-    researchGoal,
+    researchGoal: combinedResearchGoal,
     sourcePreferences,
   };
 
   await updateSessionWithClarity(sessionId, clarity);
 
+  const clarityDecision = await decideClarityNextStep({
+    topic: session.topic,
+    userBackground,
+    researchGoal: combinedResearchGoal,
+    sourcePreferences,
+    followUpResponses,
+    clarityRound,
+  });
+
   return res.status(200).json({
     sessionId,
-    message: "Clarity questions answered.",
-    nextStep: "generate_research_plan",
+    message: clarityDecision.message,
+    nextStep: clarityDecision.nextStep,
+    followUpQuestions: clarityDecision.followUpQuestions,
+    clarityRound: clarityDecision.clarityRound,
   });
 });
 
