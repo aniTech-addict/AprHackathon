@@ -12,16 +12,29 @@ export function ClarityPage({ apiBaseUrl, sessionId, onClarityComplete, onError 
   const [userBackground, setUserBackground] = useState<'researcher' | 'student' | 'teacher'>('student')
   const [researchGoal, setResearchGoal] = useState('')
   const [sourcePreferences, setSourcePreferences] = useState<string[]>(['reputable_only'])
+  const [followUpQuestions, setFollowUpQuestions] = useState<string[]>([])
+  const [followUpAnswers, setFollowUpAnswers] = useState<string[]>([])
+  const [clarityRound, setClarityRound] = useState(1)
+  const [notice, setNotice] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
+    setNotice(null)
 
     if (!researchGoal.trim()) {
       setError('Please describe your research goal.')
       return
+    }
+
+    if (followUpQuestions.length > 0) {
+      const hasEmptyAnswer = followUpAnswers.some((answer) => !answer.trim())
+      if (hasEmptyAnswer) {
+        setError('Please answer all follow-up clarification questions.')
+        return
+      }
     }
 
     setIsSubmitting(true)
@@ -35,12 +48,30 @@ export function ClarityPage({ apiBaseUrl, sessionId, onClarityComplete, onError 
           userBackground,
           researchGoal,
           sourcePreferences,
+          clarityRound,
+          followUpResponses: followUpAnswers,
         }),
       })
 
       if (!response.ok) {
         const payload = (await response.json()) as { message?: string }
         throw new Error(payload.message || 'Failed to save clarity responses.')
+      }
+
+      const payload = (await response.json()) as {
+        nextStep?: 'ask_clarity_questions' | 'generate_research_plan'
+        followUpQuestions?: string[]
+        clarityRound?: number
+        message?: string
+      }
+
+      if (payload.nextStep === 'ask_clarity_questions' && Array.isArray(payload.followUpQuestions)) {
+        const questions = payload.followUpQuestions.filter(Boolean)
+        setFollowUpQuestions(questions)
+        setFollowUpAnswers(questions.map(() => ''))
+        setClarityRound(payload.clarityRound || clarityRound + 1)
+        setNotice(payload.message || 'Please provide more details before planning.')
+        return
       }
 
       onClarityComplete()
@@ -126,11 +157,43 @@ export function ClarityPage({ apiBaseUrl, sessionId, onClarityComplete, onError 
             </div>
           </div>
 
+          {followUpQuestions.length > 0 ? (
+            <div>
+              <label className="label">Follow-up Clarification Questions</label>
+              <p className="hint">Please answer these before we generate the plan.</p>
+              <div className="follow-up-stack">
+                {followUpQuestions.map((question, index) => (
+                  <div key={`${question}-${index}`}>
+                    <label className="label" htmlFor={`follow-up-${index}`}>
+                      {index + 1}. {question}
+                    </label>
+                    <textarea
+                      id={`follow-up-${index}`}
+                      className="field"
+                      rows={3}
+                      value={followUpAnswers[index] || ''}
+                      onChange={(event) => {
+                        const next = [...followUpAnswers]
+                        next[index] = event.target.value
+                        setFollowUpAnswers(next)
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
           <button type="submit" className="button" disabled={isSubmitting}>
-            {isSubmitting ? 'Processing...' : 'Continue to Planning'}
+            {isSubmitting
+              ? 'Processing...'
+              : followUpQuestions.length > 0
+                ? 'Submit Clarifications'
+                : 'Continue to Planning'}
           </button>
         </form>
 
+        {notice ? <p className="success-note">{notice}</p> : null}
         {error ? <p className="error">{error}</p> : null}
       </section>
     </main>
