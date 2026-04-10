@@ -116,7 +116,7 @@ export async function listSessions(): Promise<SessionListItem[]> {
         (SELECT id FROM research_plans WHERE session_id = s.id ORDER BY created_at DESC LIMIT 1) as latest_plan_id,
         s.created_at,
         s.updated_at
-      FROM sessions
+      FROM sessions s
       ORDER BY s.updated_at DESC
       LIMIT 50
     `
