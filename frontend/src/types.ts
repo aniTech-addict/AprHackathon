@@ -50,9 +50,18 @@ export interface ReviewSource {
 export interface ReviewParagraph {
   id: string
   order: number
+  segmentOrder: number
+  paragraphIndex: number
   segmentTitle: string
   content: string
   sources: ReviewSource[]
+}
+
+export interface ReviewPage {
+  segmentOrder: number
+  segmentTitle: string
+  topic: string
+  paragraphs: ReviewParagraph[]
 }
 
 export interface ReviewPreviewResponse {
@@ -60,5 +69,51 @@ export interface ReviewPreviewResponse {
   planId: string
   topic: string
   planStatus: string
+  approvedSegmentOrders: number[]
+  pages: ReviewPage[]
   paragraphs: ReviewParagraph[]
+}
+
+export interface ReviewExportResponse {
+  sessionId: string
+  planId: string
+  topic: string
+  planStatus: string
+  exportedAt: string
+  pageCount: number
+  paragraphCount: number
+  sourceCount: number
+  pages: Array<{
+    segmentOrder: number
+    segmentTitle: string
+    topic: string
+    paragraphs: Array<{
+      id: string
+      order: number
+      paragraphIndex: number
+      content: string
+    }>
+  }>
+  paragraphs: Array<{
+    id: string
+    order: number
+    segmentOrder: number
+    paragraphIndex: number
+    segmentTitle: string
+    content: string
+    citations: Array<{
+      sourceId: string
+      title: string
+      url: string
+      excerpt: string
+    }>
+  }>
+  sources: Array<{
+    id: string
+    title: string
+    url: string
+    excerpt: string
+    paragraphId: string
+    paragraphOrder: number
+  }>
 }

@@ -396,58 +396,88 @@ select.field {
   min-width: 0;
 }
 
-.review-paragraph-list {
-  display: grid;
-  gap: 0.9rem;
+.review-document-page {
   margin-top: 1rem;
-}
-
-.paragraph-preview-card {
-  width: 100%;
   border: 1px solid #d8e4ef;
   border-radius: 12px;
-  padding: 0.9rem;
-  text-align: left;
-  background: #f8fbff;
+  background: #fffefc;
+  padding: 1.35rem 1.1rem;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.7);
+}
+
+.review-document-title {
+  margin: 0 0 0.95rem;
+  color: #1a1b1f;
+}
+
+.review-document-body {
   display: grid;
-  gap: 0.45rem;
+  gap: 0.2rem;
+}
+
+.review-doc-paragraph {
+  border-radius: 10px;
+  padding: 0.7rem 0.75rem;
   cursor: pointer;
-  color: #1f2937;
+  transition: background 0.18s ease;
 }
 
-.paragraph-preview-card:hover {
-  border-color: #9dbddf;
-  background: #f2f8ff;
-}
-
-.paragraph-preview-card:focus-visible {
-  outline: 2px solid rgba(34, 119, 194, 0.32);
+.review-doc-paragraph:focus-visible {
+  outline: 2px solid rgba(15, 95, 159, 0.28);
   outline-offset: 2px;
 }
 
-.paragraph-preview-card.is-active {
-  border-color: #2a79bf;
-  background: #eaf4ff;
-  box-shadow: inset 0 0 0 1px rgba(42, 121, 191, 0.2);
+.review-doc-paragraph-meta {
+  display: flex;
+  gap: 0.65rem;
+  align-items: baseline;
+  margin-bottom: 0.45rem;
 }
 
-.paragraph-preview-order {
-  font-size: 0.78rem;
-  letter-spacing: 0.08em;
+.review-doc-paragraph-meta span {
+  font-size: 0.75rem;
   text-transform: uppercase;
-  color: #0a4e84;
-  font-weight: 700;
-}
-
-.paragraph-preview-card p {
-  margin: 0;
-  color: #334155;
-}
-
-.paragraph-preview-cta {
-  font-size: 0.85rem;
+  letter-spacing: 0.08em;
   font-weight: 700;
   color: #0f5f9f;
+  white-space: nowrap;
+}
+
+.review-doc-paragraph-meta strong {
+  color: #1f2937;
+  font-size: 0.98rem;
+}
+
+.review-doc-paragraph p {
+  margin: 0;
+  line-height: 1.8;
+  color: #1f2937;
+}
+
+.review-doc-paragraph:hover {
+  background: #f5f9ff;
+}
+
+.review-doc-paragraph.is-active {
+  background: #edf4ff;
+  box-shadow: inset 2px 0 0 #2a79bf;
+}
+
+.review-doc-paragraph.is-editing {
+  background: #f0f7ff;
+  box-shadow: inset 2px 0 0 #0f5f9f;
+}
+
+.review-doc-editor {
+  width: 100%;
+  margin: 0;
+}
+
+.review-doc-edit-actions {
+  margin-top: 0.65rem;
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .active-paragraph-summary {
@@ -467,6 +497,39 @@ select.field {
   margin-top: 1rem;
   display: grid;
   gap: 0.8rem;
+}
+
+.source-browser-shell {
+  margin-top: 1rem;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.source-browser-toolbar {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.source-tab-button {
+  border: 1px solid #c7d9ec;
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+  font: inherit;
+  font-size: 0.86rem;
+  background: #f3f9ff;
+  color: #0a4e84;
+  cursor: pointer;
+}
+
+.source-tab-button:hover {
+  background: #e8f3ff;
+}
+
+.source-tab-button.is-active {
+  background: #0f5f9f;
+  color: #ffffff;
+  border-color: #0f5f9f;
 }
 
 .source-card {
@@ -494,6 +557,42 @@ select.field {
 
 .source-link:hover {
   color: #0a3f68;
+}
+
+.mini-browser-frame-wrap {
+  border: 1px solid #d8e4ef;
+  border-radius: 10px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.mini-browser-frame-wrap .hint {
+  margin: 0;
+  padding: 0.6rem 0.8rem;
+  border-bottom: 1px solid #e7edf4;
+}
+
+.mini-browser-frame {
+  width: 100%;
+  min-height: 440px;
+  border: 0;
+  background: #ffffff;
+}
+
+.mini-browser-note {
+  margin-top: 0.2rem;
+}
+
+.review-toolbar {
+  margin-top: 1rem;
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.review-success-note {
+  margin: 0;
 }
 
 @media (max-width: 900px) {

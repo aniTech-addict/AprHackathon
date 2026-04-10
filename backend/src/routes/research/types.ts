@@ -27,6 +27,11 @@ export interface UpdatePlanBody {
   segments?: ResearchSegment[];
 }
 
+export interface ApproveReviewPageBody {
+  planId?: string;
+  segmentOrder?: number;
+}
+
 export type SegmentValidationResult =
   | { ok: true; value: ResearchSegment[] }
   | { ok: false; message: string };
