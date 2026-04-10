@@ -32,6 +32,17 @@ export interface ApproveReviewPageBody {
   segmentOrder?: number;
 }
 
+export interface ReviewParagraphRefineBody {
+  planId?: string;
+  mode?: "manual" | "ai";
+  content?: string;
+  instruction?: string;
+}
+
+export interface ReviewParagraphActionBody {
+  planId?: string;
+}
+
 export type SegmentValidationResult =
   | { ok: true; value: ResearchSegment[] }
   | { ok: false; message: string };

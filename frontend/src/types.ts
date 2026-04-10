@@ -64,6 +64,9 @@ export interface ReviewParagraph {
   paragraphIndex: number
   segmentTitle: string
   content: string
+  previousContent: string | null
+  status: 'pending_review' | 'approved' | 'deleted'
+  lastEditedBy: 'manual' | 'ai' | null
   sources: ReviewSource[]
 }
 
