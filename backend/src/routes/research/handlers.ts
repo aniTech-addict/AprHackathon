@@ -335,6 +335,45 @@ function normalizePlanSegments(structure: unknown): PlanStructureSegment[] {
   return segments.sort((a, b) => a.order - b.order);
 }
 
+async function buildResearchFocusContext(
+  sessionId: string,
+  topic: string,
+): Promise<string> {
+  const result = await pool.query(
+    `
+      SELECT raw_input, user_background, research_goal, source_preferences
+      FROM sessions
+      WHERE id = $1
+      LIMIT 1
+    `,
+    [sessionId],
+  );
+
+  if (result.rows.length === 0) {
+    return `Primary topic: ${topic}. Stay strictly focused on this topic and avoid tangential subtopics.`;
+  }
+
+  const row = result.rows[0] as {
+    raw_input?: string;
+    user_background?: string;
+    research_goal?: string;
+    source_preferences?: unknown;
+  };
+
+  const sourcePreferences = Array.isArray(row.source_preferences)
+    ? row.source_preferences.map((value) => String(value)).join(", ")
+    : "reputable_only";
+
+  return [
+    `Primary topic: ${topic}`,
+    `Original user ask: ${(row.raw_input || topic).trim()}`,
+    `Audience/background: ${String(row.user_background || "student")}`,
+    `Research goal: ${String(row.research_goal || "Evaluate and explain the topic using evidence")}`,
+    `Source preferences: ${sourcePreferences}`,
+    "Priority in phase 4: keep each section tightly aligned to the plan segment question and avoid off-topic expansion.",
+  ].join("\n");
+}
+
 function getParagraphContext(
   paragraphs: ReviewPreviewParagraph[],
   paragraphId: string,
@@ -717,10 +756,13 @@ export async function reviewPreviewHandler(
       });
     }
 
+    const researchFocusContext = await buildResearchFocusContext(sessionId, session.topic);
+
     const paragraphs = await ensureReviewPreview({
       sessionId,
       planId: planRow.id,
       topic: session.topic,
+      researchFocusContext,
       segments,
     });
 
@@ -776,10 +818,13 @@ export async function approveReviewPageHandler(
       return res.status(404).json({ message: "No plan segments available for approval." });
     }
 
+    const researchFocusContext = await buildResearchFocusContext(sessionId, session.topic);
+
     await ensureReviewPreview({
       sessionId,
       planId: planRow.id,
       topic: session.topic,
+      researchFocusContext,
       segments,
     });
 
@@ -811,6 +856,7 @@ export async function approveReviewPageHandler(
       sessionId,
       planId: planRow.id,
       topic: session.topic,
+      researchFocusContext,
       segments,
       segmentOrder,
     });
@@ -1044,10 +1090,13 @@ export async function reviewExportHandler(
       });
     }
 
+    const researchFocusContext = await buildResearchFocusContext(sessionId, session.topic);
+
     const paragraphs = await ensureReviewPreview({
       sessionId,
       planId: planRow.id,
       topic: session.topic,
+      researchFocusContext,
       segments,
     });
 
@@ -1203,10 +1252,13 @@ export async function reviewDraftMarkdownHandler(
       return res.status(404).json({ message: "No plan segments available." });
     }
 
+    const researchFocusContext = await buildResearchFocusContext(sessionId, session.topic);
+
     await ensureReviewPreview({
       sessionId,
       planId: planRow.id,
       topic: session.topic,
+      researchFocusContext,
       segments,
     });
 

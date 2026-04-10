@@ -549,8 +549,10 @@ export async function discoverTrustedWebSources(
   topic: string,
   segmentTopic: string,
   limit: number,
+  researchFocusContext = "",
 ): Promise<SourceSeed[]> {
-  const query = `${segmentTopic} ${topic}`.trim();
+  const scopedFocus = researchFocusContext.trim().slice(0, 180);
+  const query = `${segmentTopic} ${topic} ${scopedFocus}`.trim();
 
   const [wikiCandidates, openAlexCandidates, crossrefCandidates] = await Promise.all([
     fetchWikipediaCandidates(query),

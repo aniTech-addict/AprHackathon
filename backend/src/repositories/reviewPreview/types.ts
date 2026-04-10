@@ -40,6 +40,7 @@ export interface EnsureReviewPreviewArgs {
   sessionId: string;
   planId: string;
   topic: string;
+  researchFocusContext?: string;
   segments: PlanStructureSegment[];
 }
 
