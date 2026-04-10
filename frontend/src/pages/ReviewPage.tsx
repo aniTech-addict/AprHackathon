@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ResizableTwoColumnLayout } from '../components/ResizableTwoColumnLayout'
 import { AsyncProgressPanel } from '../components/AsyncProgressPanel'
 import type { ReviewExportResponse, ReviewPage, ReviewParagraph, ReviewPreviewResponse } from '../types'
@@ -25,10 +25,40 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
   const [approvedSegmentOrders, setApprovedSegmentOrders] = useState<number[]>([])
   const [activeParagraphId, setActiveParagraphId] = useState<string | null>(null)
   const [activeSourceId, setActiveSourceId] = useState<string | null>(null)
-  const [isFrameLoading, setIsFrameLoading] = useState(false)
+  const [isSourcePreviewLoading, setIsSourcePreviewLoading] = useState(false)
+  const [sourcePreviewError, setSourcePreviewError] = useState<string | null>(null)
+  const [sourcePreviewText, setSourcePreviewText] = useState<string>('')
+  const [sourcePreviewTitle, setSourcePreviewTitle] = useState<string>('')
   const [editingParagraphId, setEditingParagraphId] = useState<string | null>(null)
   const [editingDraft, setEditingDraft] = useState('')
   const [busyOperationLabel, setBusyOperationLabel] = useState<string | null>(null)
+  const activePageIndexRef = useRef(0)
+  const activeParagraphIdRef = useRef<string | null>(null)
+  const activeSourceIdRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    activePageIndexRef.current = activePageIndex
+  }, [activePageIndex])
+
+  useEffect(() => {
+    activeParagraphIdRef.current = activeParagraphId
+  }, [activeParagraphId])
+
+  useEffect(() => {
+    activeSourceIdRef.current = activeSourceId
+  }, [activeSourceId])
+
+  function setPageSelection(nextPageIndex: number) {
+    activePageIndexRef.current = nextPageIndex
+    setActivePageIndex(nextPageIndex)
+  }
+
+  function setParagraphAndSourceSelection(nextParagraphId: string | null, nextSourceId: string | null) {
+    activeParagraphIdRef.current = nextParagraphId
+    activeSourceIdRef.current = nextSourceId
+    setActiveParagraphId(nextParagraphId)
+    setActiveSourceId(nextSourceId)
+  }
 
   function startEditing(paragraph: ReviewParagraph) {
     setEditingParagraphId(paragraph.id)
@@ -40,6 +70,10 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
     setEditingDraft('')
   }
 
+  function selectParagraph(paragraph: ReviewParagraph | null) {
+    setParagraphAndSourceSelection(paragraph?.id || null, paragraph?.sources?.[0]?.id || null)
+  }
+
   function applyReviewPayload(payload: ReviewPreviewResponse) {
     setReviewData(payload)
     setDocumentParagraphs(payload.paragraphs)
@@ -48,16 +82,31 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
   }
 
   function syncSelectionAfterPayload(payload: ReviewPreviewResponse) {
-    const nextPageIndex = Math.min(activePageIndex, Math.max(payload.pages.length - 1, 0))
-    setActivePageIndex(nextPageIndex)
+    const currentPageIndex = activePageIndexRef.current
+    const currentParagraphId = activeParagraphIdRef.current
+    const currentSourceId = activeSourceIdRef.current
+
+    const nextPageIndex = Math.min(currentPageIndex, Math.max(payload.pages.length - 1, 0))
+    setPageSelection(nextPageIndex)
 
     const keepCurrent =
-      (activeParagraphId && payload.paragraphs.find((paragraph) => paragraph.id === activeParagraphId)) || null
+      (currentParagraphId && payload.paragraphs.find((paragraph) => paragraph.id === currentParagraphId)) || null
     const fallbackParagraph = payload.pages[nextPageIndex]?.paragraphs?.[0] || payload.paragraphs[0] || null
     const nextActiveParagraph = keepCurrent || fallbackParagraph
 
-    setActiveParagraphId(nextActiveParagraph?.id || null)
-    setActiveSourceId(nextActiveParagraph?.sources?.[0]?.id || null)
+    if (!nextActiveParagraph || nextActiveParagraph.sources.length === 0) {
+      setParagraphAndSourceSelection(nextActiveParagraph?.id || null, null)
+      return
+    }
+
+    const keepCurrentSource = currentSourceId
+      ? nextActiveParagraph.sources.find((source) => source.id === currentSourceId) || null
+      : null
+
+    setParagraphAndSourceSelection(
+      nextActiveParagraph.id,
+      keepCurrentSource?.id || nextActiveParagraph.sources[0].id,
+    )
   }
 
   async function runParagraphMutation(
@@ -357,7 +406,7 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
         applyReviewPayload(payload)
         setIsGeneratingPreview(Boolean(payload.isGenerating))
 
-        const hasActiveSelection = Boolean(activeParagraphId)
+        const hasActiveSelection = Boolean(activeParagraphIdRef.current)
         if (!hasActiveSelection) {
           setActivePageIndex(0)
           const firstParagraph = payload.pages?.[0]?.paragraphs?.[0] || payload.paragraphs[0] || null
@@ -446,7 +495,7 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
 
     setActivePageIndex(nextIndex)
     const firstParagraph = reviewPages[nextIndex]?.paragraphs?.[0]
-    setActiveParagraphId(firstParagraph?.id || null)
+    selectParagraph(firstParagraph || null)
     setEditingParagraphId(null)
     setEditingDraft('')
   }
@@ -466,13 +515,69 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
   useEffect(() => {
     if (!activeParagraph || activeParagraph.sources.length === 0) {
       setActiveSourceId(null)
-      setIsFrameLoading(false)
+      setIsSourcePreviewLoading(false)
+      setSourcePreviewError(null)
+      setSourcePreviewText('')
+      setSourcePreviewTitle('')
       return
     }
 
     setActiveSourceId(activeParagraph.sources[0].id)
-    setIsFrameLoading(true)
   }, [activeParagraph?.id])
+
+  useEffect(() => {
+    const source = activeSource
+    if (!source) {
+      setIsSourcePreviewLoading(false)
+      setSourcePreviewError(null)
+      setSourcePreviewText('')
+      setSourcePreviewTitle('')
+      return
+    }
+
+    const selectedSource = source
+
+    const controller = new AbortController()
+
+    async function loadSourcePreview() {
+      setIsSourcePreviewLoading(true)
+      setSourcePreviewError(null)
+      setSourcePreviewText('')
+      setSourcePreviewTitle('')
+
+      try {
+        const response = await fetch(
+          `${apiBaseUrl}/api/research/${sessionId}/source-preview?url=${encodeURIComponent(selectedSource.url)}`,
+          { signal: controller.signal },
+        )
+
+        if (!response.ok) {
+          const payload = (await response.json()) as { message?: string }
+          throw new Error(payload.message || 'Failed to load webpage preview.')
+        }
+
+        const payload = (await response.json()) as { title?: string; excerpt?: string }
+        setSourcePreviewTitle(payload.title || selectedSource.title)
+        setSourcePreviewText(payload.excerpt || '')
+      } catch (previewError) {
+        if ((previewError as { name?: string }).name === 'AbortError') {
+          return
+        }
+
+        const message =
+          previewError instanceof Error ? previewError.message : 'Failed to load webpage preview.'
+        setSourcePreviewError(message)
+      } finally {
+        setIsSourcePreviewLoading(false)
+      }
+    }
+
+    void loadSourcePreview()
+
+    return () => {
+      controller.abort()
+    }
+  }, [apiBaseUrl, sessionId, activeSource?.id])
 
   if (isLoading) {
     return (
@@ -622,9 +727,9 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
                         tabIndex={0}
                         title="Hover to preview sources. Double-click to edit."
                         className={`review-doc-paragraph ${isActive ? 'is-active' : ''} ${isEditing ? 'is-editing' : ''}`.trim()}
-                        onMouseEnter={() => setActiveParagraphId(paragraph.id)}
-                        onFocus={() => setActiveParagraphId(paragraph.id)}
-                        onClick={() => setActiveParagraphId(paragraph.id)}
+                        onMouseEnter={() => selectParagraph(paragraph)}
+                        onFocus={() => selectParagraph(paragraph)}
+                        onClick={() => selectParagraph(paragraph)}
                         onDoubleClick={() => startEditing(paragraph)}
                       >
                         {isEditing ? (
@@ -720,14 +825,6 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
                 <p className="hint">No paragraph selected yet.</p>
               ) : (
                 <>
-                  <div className="active-paragraph-summary">
-                    <p className="hint">
-                      Page {activeParagraph.segmentOrder} • Paragraph {activeParagraph.paragraphIndex}
-                    </p>
-                    <h3>{activeParagraph.segmentTitle}</h3>
-                    <p>{activeParagraph.content}</p>
-                  </div>
-
                   {activeParagraph.sources.length === 0 ? (
                     <p className="hint">No sources are attached to this paragraph yet.</p>
                   ) : (
@@ -744,7 +841,6 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
                               className={`source-tab-button ${isSourceActive ? 'is-active' : ''}`}
                               onClick={() => {
                                 setActiveSourceId(source.id)
-                                setIsFrameLoading(true)
                               }}
                             >
                               Source {index + 1}
@@ -764,19 +860,22 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
                           </div>
 
                           <div className="mini-browser-frame-wrap">
-                            {isFrameLoading ? <p className="hint">Loading webpage preview...</p> : null}
-                            <iframe
-                              key={activeSource.id}
-                              src={activeSource.url}
-                              title={`Source preview: ${activeSource.title}`}
-                              className="mini-browser-frame"
-                              onLoad={() => setIsFrameLoading(false)}
-                              referrerPolicy="no-referrer"
-                            />
+                            {isSourcePreviewLoading ? <p className="hint">Loading webpage preview...</p> : null}
+                            {!isSourcePreviewLoading && sourcePreviewError ? (
+                              <p className="error">{sourcePreviewError}</p>
+                            ) : null}
+
+                            {!isSourcePreviewLoading && !sourcePreviewError ? (
+                              <article className="source-preview-text" aria-label="Extracted webpage preview text">
+                                <h4>{sourcePreviewTitle || activeSource.title}</h4>
+                                <p>{sourcePreviewText || 'No preview text available for this source.'}</p>
+                              </article>
+                            ) : null}
                           </div>
 
                           <p className="hint mini-browser-note">
-                            Some websites block embedding. If a preview is blocked, use "Open in full tab".
+                            This preview is fetched by the backend to avoid iframe blocking and connection-refused issues.
+                            If extraction fails, use "Open in full tab".
                           </p>
                         </>
                       ) : null}

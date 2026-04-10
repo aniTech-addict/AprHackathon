@@ -498,6 +498,26 @@ select.field {
   min-width: 0;
 }
 
+.source-preview-text {
+  border: 1px solid #d6e1eb;
+  border-radius: 10px;
+  background: #f9fcff;
+  padding: 0.9rem;
+  max-height: 420px;
+  overflow: auto;
+}
+
+.source-preview-text h4 {
+  margin: 0 0 0.5rem;
+}
+
+.source-preview-text p {
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.48;
+  color: #243447;
+}
+
 .review-document-page {
   margin-top: 1rem;
   border: 1px solid #d8e4ef;
