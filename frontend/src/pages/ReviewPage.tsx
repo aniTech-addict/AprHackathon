@@ -429,11 +429,6 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
                         onClick={() => setActiveParagraphId(paragraph.id)}
                         onDoubleClick={() => startEditing(paragraph)}
                       >
-                        <div className="review-doc-paragraph-meta">
-                          <span>Paragraph {paragraph.paragraphIndex}</span>
-                          <strong>Page {paragraph.segmentOrder}</strong>
-                        </div>
-
                         {isEditing ? (
                           <>
                             <textarea
@@ -479,7 +474,9 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
               ) : (
                 <>
                   <div className="active-paragraph-summary">
-                    <p className="hint">Paragraph {activeParagraph.order}</p>
+                    <p className="hint">
+                      Page {activeParagraph.segmentOrder} • Paragraph {activeParagraph.paragraphIndex}
+                    </p>
                     <h3>{activeParagraph.segmentTitle}</h3>
                     <p>{activeParagraph.content}</p>
                   </div>
