@@ -1,6 +1,16 @@
 export type InputCategory = 'descriptive' | 'vague'
 export type Phase = 'input' | 'clarity' | 'planning' | 'review'
 
+export interface SessionListItem {
+  id: string
+  topic: string
+  inputCategory: InputCategory
+  status: string
+  latestPlanId: string | null
+  createdAt: string
+  updatedAt: string
+}
+
 export interface StartResearchResponse {
   sessionId: string
   topic: string

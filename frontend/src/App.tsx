@@ -4,6 +4,7 @@ import { InputPage } from './pages/InputPage'
 import { ClarityPage } from './pages/ClarityPage'
 import { PlanningPage } from './pages/PlanningPage'
 import { ReviewPage } from './pages/ReviewPage'
+import { SessionSidebar } from './components/SessionSidebar'
 import type { Phase, StartResearchResponse } from './types'
 
 function App() {
@@ -13,6 +14,7 @@ function App() {
   const [initialFollowUpQuestions, setInitialFollowUpQuestions] = useState<string[]>([])
   const [initialClarityRound, setInitialClarityRound] = useState(1)
   const [_error, setError] = useState<string | null>(null)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const apiBaseUrl = useMemo(
     () => import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000',
@@ -52,12 +54,20 @@ function App() {
     setError(errorMsg)
   }
 
-  if (currentPhase === 'input') {
-    return <InputPage apiBaseUrl={apiBaseUrl} onInputSubmit={handleInputSubmit} onError={handleError} />
+  function handleSessionSelect(selectedSessionId: string) {
+    setSessionId(selectedSessionId)
+    setPlanId(null)
+    setCurrentPhase('input')
+    setSidebarOpen(false)
   }
 
-  if (currentPhase === 'clarity' && sessionId) {
-    return (
+  // Determine the current content to render
+  let content = null
+
+  if (currentPhase === 'input') {
+    content = <InputPage apiBaseUrl={apiBaseUrl} onInputSubmit={handleInputSubmit} onError={handleError} />
+  } else if (currentPhase === 'clarity' && sessionId) {
+    content = (
       <ClarityPage
         apiBaseUrl={apiBaseUrl}
         sessionId={sessionId}
@@ -67,10 +77,8 @@ function App() {
         onError={handleError}
       />
     )
-  }
-
-  if (currentPhase === 'planning' && sessionId) {
-    return (
+  } else if (currentPhase === 'planning' && sessionId) {
+    content = (
       <PlanningPage
         apiBaseUrl={apiBaseUrl}
         sessionId={sessionId}
@@ -78,13 +86,21 @@ function App() {
         onPlanApproved={handlePlanApproved}
       />
     )
+  } else if (currentPhase === 'review' && sessionId) {
+    content = <ReviewPage apiBaseUrl={apiBaseUrl} sessionId={sessionId} planId={planId} onError={handleError} />
   }
 
-  if (currentPhase === 'review' && sessionId) {
-    return <ReviewPage apiBaseUrl={apiBaseUrl} sessionId={sessionId} planId={planId} onError={handleError} />
-  }
-
-  return null
+  return (
+    <>
+      <SessionSidebar
+        isOpen={sidebarOpen}
+        onToggle={() => setSidebarOpen(!sidebarOpen)}
+        currentSessionId={sessionId}
+        onSessionSelect={handleSessionSelect}
+      />
+      {content}
+    </>
+  )
 }
 
 export default App
