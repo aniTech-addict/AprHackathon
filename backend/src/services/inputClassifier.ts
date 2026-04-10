@@ -13,6 +13,63 @@ interface ClassificationResult {
   reasoning: string;
 }
 
+interface DetailSignalSummary {
+  wordCount: number;
+  hasObjectiveSignal: boolean;
+  hasScopeSignal: boolean;
+  hasConstraintSignal: boolean;
+  signalCount: number;
+}
+
+function summarizeDetailSignals(input: string): DetailSignalSummary {
+  const normalized = input.trim().toLowerCase();
+  const wordCount = normalized.split(/\s+/).filter(Boolean).length;
+
+  const hasObjectiveSignal =
+    /(analy[sz]e|evaluate|compare|assess|investigate|explain|forecast|propose|measure|impact|effect)/.test(
+      normalized,
+    );
+  const hasScopeSignal =
+    /(from\s+\d{4}|between\s+\d{4}|\d{4}\s*(to|-|–)\s*\d{4}|in\s+(india|us|usa|europe|africa|asia|global|worldwide)|across|by\s+region|over\s+time|histor)/.test(
+      normalized,
+    );
+  const hasConstraintSignal =
+    /(using|based on|with|sources?|papers?|journals?|datasets?|reports?|news|for\s+(students?|researchers?|teachers?)|policy|case studies?|compar)/.test(
+      normalized,
+    );
+
+  const signalCount = [hasObjectiveSignal, hasScopeSignal, hasConstraintSignal].filter(Boolean)
+    .length;
+
+  return {
+    wordCount,
+    hasObjectiveSignal,
+    hasScopeSignal,
+    hasConstraintSignal,
+    signalCount,
+  };
+}
+
+function isDescriptiveByStrictRule(input: string): boolean {
+  const signals = summarizeDetailSignals(input);
+
+  // Stricter gate: require length and at least two concrete planning signals.
+  if (signals.wordCount < 12) {
+    return false;
+  }
+
+  if (signals.signalCount < 2) {
+    return false;
+  }
+
+  // At least one of objective/scope should be explicit for planning readiness.
+  if (!signals.hasObjectiveSignal && !signals.hasScopeSignal) {
+    return false;
+  }
+
+  return true;
+}
+
 /**
  * Classifies user research input using a heuristic approach based on word count and presence of certain keywords.
  * @param {String} input - User research topic input to classify
@@ -20,27 +77,32 @@ interface ClassificationResult {
  */
 function heuristicClassify(input: string): ClassificationResult {
   const normalized = input.trim().toLowerCase();
-  const wordCount = normalized.split(/\s+/).filter(Boolean).length;
+  const signals = summarizeDetailSignals(input);
+  const wordCount = signals.wordCount;
 
   let score = 0;
 
-  if (wordCount >= 25) score += 0.45;
-  else if (wordCount >= 15) score += 0.28;
-  else if (wordCount <= 6) score -= 0.35;
+  if (wordCount >= 30) score += 0.42;
+  else if (wordCount >= 20) score += 0.24;
+  else if (wordCount <= 10) score -= 0.42;
 
-  const hasGoalSignal = /(goal|focus|compare|evaluate|analyze|history|future|solution|impact)/.test(normalized);
-  if (hasGoalSignal) score += 0.22;
+  if (signals.hasObjectiveSignal) score += 0.16;
 
-  const hasScopeSignal = /(in|for|between|across|from .* to .*|current|global|india|us|europe|africa)/.test(normalized);
-  if (hasScopeSignal) score += 0.15;
+  if (signals.hasScopeSignal) score += 0.16;
 
-  const hasSourceSignal = /(source|paper|journal|news|report|dataset|article)/.test(normalized);
-  if (hasSourceSignal) score += 0.12;
+  if (signals.hasConstraintSignal) score += 0.12;
 
-  const hasVagueSignal = /(^|\s)(something|anything|stuff|topic|about it|etc)(\s|$)/.test(normalized);
+  const hasVagueSignal =
+    /(^|\s)(something|anything|stuff|topic|about it|etc|help me|tell me about)(\s|$)/.test(
+      normalized,
+    );
   if (hasVagueSignal) score -= 0.3;
 
-  const category: InputCategory = score >= 0.3 ? "descriptive" : "vague";
+  if (!signals.hasObjectiveSignal) score -= 0.08;
+  if (!signals.hasScopeSignal) score -= 0.08;
+  if (signals.signalCount < 2) score -= 0.18;
+
+  const category: InputCategory = score >= 0.45 ? "descriptive" : "vague";
   const confidence = Math.max(0.55, Math.min(0.95, 0.65 + Math.abs(score) * 0.4));
 
   return {
@@ -67,7 +129,7 @@ async function classifyWithOpenRouter(input: string): Promise<ClassificationResu
       {
         role: "system",
         content:
-          "You classify research prompts for planning readiness. Label input as 'descriptive' or 'vague'. Descriptive means the input contains clear objective plus at least one useful scope detail (timeframe, geography, audience, comparison, or source constraint). Vague means broad/ambiguous input that still needs clarification. Return strict JSON only matching the provided schema. Keep reasoning concise (max 20 words).",
+          "You classify research prompts for planning readiness using a strict standard. Label as 'descriptive' only if the prompt has enough detail to immediately generate focused plan segments and precise search queries. Minimum bar for 'descriptive': explicit objective + at least one scope boundary (timeframe, geography, audience, comparison, or method/source constraint). If details are partial or generic, label 'vague'. Prefer 'vague' when uncertain. Return strict JSON only matching the provided schema. Keep reasoning concise (max 20 words).",
       },
       {
         role: "user",
@@ -127,7 +189,18 @@ async function classifyWithOpenRouter(input: string): Promise<ClassificationResu
 export async function classifyInput(input: string): Promise<ClassificationResult> {
   try {
     const llmResult = await classifyWithOpenRouter(input);
-    if (llmResult) return llmResult;
+    if (llmResult) {
+      if (llmResult.category === "descriptive" && !isDescriptiveByStrictRule(input)) {
+        return {
+          category: "vague",
+          confidence: Math.max(0.7, llmResult.confidence),
+          reasoning:
+            "Input still lacks enough concrete scope/objective constraints for planning; clarification is required.",
+        };
+      }
+
+      return llmResult;
+    }
   } catch (error) {
     console.error("[input-classification] OpenRouter classification failed; using heuristic fallback:", error);
   }
