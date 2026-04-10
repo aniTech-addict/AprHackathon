@@ -85,6 +85,7 @@ export async function buildReviewParagraphContent(
   paragraphIndex: number,
   previousParagraphs: string[] = [],
   sources: SourceSeed[] = [],
+  researchFocusContext = "",
 ): Promise<string> {
   if (paragraphIndex < 1 || paragraphIndex > 3) {
     return buildTemplateParagraph(topic, segment, 3, previousParagraphs);
@@ -100,7 +101,11 @@ export async function buildReviewParagraphContent(
       ? "Write a middle paragraph that develops the evidence and analysis, building on the previous paragraph."
       : "Write a concluding paragraph that synthesizes the findings and connects back to the broader research topic.";
 
-  const prompt = `Topic: ${topic}\nSection: ${segment.title}\nParagraph position in this section: ${paragraphIndex} of 3\n\n${contextPrompt}${rolePrompt}\n\nRequirements:\n- Continue the narrative, do not write as an isolated standalone paragraph.\n- If this is paragraph 2 or 3, use a natural transition from what was said before.\n- Add new information rather than repeating earlier sentences.\n- Use only source-grounded claims.\n\nSources:\n${sources.map((s, i) => `${i + 1}. ${s.title}: ${s.excerpt}`).join("\n")}`;
+  const focusContextPrompt = researchFocusContext.trim()
+    ? `Research focus context from phases 1-3:\n${researchFocusContext.trim()}\n\n`
+    : "";
+
+  const prompt = `Topic: ${topic}\nSection: ${segment.title}\nParagraph position in this section: ${paragraphIndex} of 3\n\n${focusContextPrompt}${contextPrompt}${rolePrompt}\n\nRequirements:\n- Continue the narrative, do not write as an isolated standalone paragraph.\n- If this is paragraph 2 or 3, use a natural transition from what was said before.\n- Add new information rather than repeating earlier sentences.\n- Use only source-grounded claims.\n- Stay tightly scoped to this section and the research focus context above.\n- Do not drift into adjacent topics unless directly required for this section's analysis.\n\nSources:\n${sources.map((s, i) => `${i + 1}. ${s.title}: ${s.excerpt}`).join("\n")}`;
 
   const result = await streamJsonChatCompletion({
     operation: "generate-paragraph",
@@ -150,6 +155,7 @@ export async function harmonizeSegmentParagraphs(args: {
   segment: PlanStructureSegment;
   paragraphs: string[];
   sources: SourceSeed[];
+  researchFocusContext?: string;
 }): Promise<string[]> {
   if (args.paragraphs.length !== 3 || args.paragraphs.some((value) => !value.trim())) {
     return args.paragraphs;
@@ -159,10 +165,14 @@ export async function harmonizeSegmentParagraphs(args: {
     .map((source, index) => `${index + 1}. ${source.title}\nURL: ${source.url}\nExcerpt: ${source.excerpt}`)
     .join("\n\n");
 
+  const focusContextPrompt = args.researchFocusContext?.trim()
+    ? `Research focus context from phases 1-3:\n${args.researchFocusContext.trim()}\n\n`
+    : "";
+
   const prompt = `Topic: ${args.topic}
 Section: ${args.segment.title}
 
-Current 3-paragraph draft:
+${focusContextPrompt}Current 3-paragraph draft:
 1) ${args.paragraphs[0]}
 
 2) ${args.paragraphs[1]}
@@ -180,6 +190,8 @@ Requirements:
 - Improve transitions between paragraph 1->2 and 2->3.
 - Reduce repetition across the three paragraphs.
 - Keep each paragraph as a single paragraph block.
+- Maintain strict alignment with the section scope and research focus context.
+- Rewrite any sentence that drifts from the section's core question.
 
 Return strict JSON with key "paragraphs" as an array of 3 strings.`;
 

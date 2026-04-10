@@ -93,7 +93,12 @@ async function insertSegmentParagraphsAndSources(
   args: EnsureReviewPreviewArgs,
   segment: PlanStructureSegment,
 ): Promise<void> {
-  const discoveredSources = await discoverTrustedWebSources(args.topic, segment.topic, 3);
+  const discoveredSources = await discoverTrustedWebSources(
+    args.topic,
+    segment.topic,
+    3,
+    args.researchFocusContext,
+  );
   const previousParagraphs: string[] = [];
   const generatedParagraphs: string[] = [];
   const paragraphIds: string[] = [];
@@ -105,6 +110,7 @@ async function insertSegmentParagraphsAndSources(
       paragraphIndex,
       previousParagraphs,
       discoveredSources,
+      args.researchFocusContext,
     );
     const paragraphId = randomUUID();
     const sources = buildReviewSourcesForParagraph(segment, paragraphIndex, discoveredSources);
@@ -167,6 +173,7 @@ async function insertSegmentParagraphsAndSources(
     segment,
     paragraphs: generatedParagraphs,
     sources: discoveredSources,
+    researchFocusContext: args.researchFocusContext,
   });
 
   for (let paragraphIndex = 1; paragraphIndex <= harmonizedParagraphs.length; paragraphIndex += 1) {
@@ -510,6 +517,7 @@ export async function approveReviewPage(args: {
   sessionId: string;
   planId: string;
   topic: string;
+  researchFocusContext?: string;
   segments: PlanStructureSegment[];
   segmentOrder: number;
 }): Promise<ReviewPreviewParagraph[]> {
@@ -517,6 +525,7 @@ export async function approveReviewPage(args: {
     sessionId: args.sessionId,
     planId: args.planId,
     topic: args.topic,
+    researchFocusContext: args.researchFocusContext,
     segments: args.segments,
   };
 
