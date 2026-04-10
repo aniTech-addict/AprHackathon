@@ -30,6 +30,7 @@ export interface UpdatePlanBody {
 export interface ApproveReviewPageBody {
   planId?: string;
   segmentOrder?: number;
+  relevanceThreshold?: number;
 }
 
 export interface ReviewParagraphRefineBody {

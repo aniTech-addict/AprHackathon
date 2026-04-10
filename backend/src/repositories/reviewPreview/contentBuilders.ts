@@ -9,6 +9,15 @@ import { streamJsonChatCompletion } from "../../services/openRouterClient";
 
 const MIN_RELEVANCE_SCORE = 0.78;
 
+function clampRelevanceThreshold(threshold?: number): number {
+  const numeric = Number(threshold);
+  if (!Number.isFinite(numeric)) {
+    return MIN_RELEVANCE_SCORE;
+  }
+
+  return Math.max(0.6, Math.min(0.95, numeric));
+}
+
 function buildTemplateParagraph(
   topic: string,
   segment: PlanStructureSegment,
@@ -226,7 +235,10 @@ async function enforceParagraphFocus(args: {
   previousParagraphs: string[];
   sources: SourceSeed[];
   researchFocusContext: string;
+  relevanceThreshold?: number;
 }): Promise<string | null> {
+  const threshold = clampRelevanceThreshold(args.relevanceThreshold);
+
   const initialScore = await scoreParagraphRelevance({
     topic: args.topic,
     segment: args.segment,
@@ -235,7 +247,7 @@ async function enforceParagraphFocus(args: {
     researchFocusContext: args.researchFocusContext,
   });
 
-  if (initialScore !== null && initialScore >= MIN_RELEVANCE_SCORE) {
+  if (initialScore !== null && initialScore >= threshold) {
     return args.paragraph;
   }
 
@@ -252,7 +264,7 @@ async function enforceParagraphFocus(args: {
     researchFocusContext: args.researchFocusContext,
   });
 
-  if (rewrittenScore !== null && rewrittenScore >= MIN_RELEVANCE_SCORE) {
+  if (rewrittenScore !== null && rewrittenScore >= threshold) {
     return rewritten;
   }
 
@@ -286,6 +298,7 @@ export async function buildReviewParagraphContent(
   previousParagraphs: string[] = [],
   sources: SourceSeed[] = [],
   researchFocusContext = "",
+  relevanceThreshold?: number,
 ): Promise<string> {
   if (paragraphIndex < 1 || paragraphIndex > 3) {
     return buildTemplateParagraph(topic, segment, 3, previousParagraphs);
@@ -355,6 +368,7 @@ export async function buildReviewParagraphContent(
     previousParagraphs,
     sources,
     researchFocusContext,
+    relevanceThreshold,
   });
 
   if (!focused) {
@@ -370,6 +384,7 @@ export async function harmonizeSegmentParagraphs(args: {
   paragraphs: string[];
   sources: SourceSeed[];
   researchFocusContext?: string;
+  relevanceThreshold?: number;
 }): Promise<string[]> {
   if (args.paragraphs.length !== 3 || args.paragraphs.some((value) => !value.trim())) {
     return args.paragraphs;
@@ -466,6 +481,7 @@ Return strict JSON with key "paragraphs" as an array of 3 strings.`;
       previousParagraphs: focusedParagraphs,
       sources: args.sources,
       researchFocusContext: args.researchFocusContext || "",
+      relevanceThreshold: args.relevanceThreshold,
     });
 
     if (!focused) {
