@@ -5,59 +5,6 @@ import type {
   SourceSeed,
 } from "./types";
 import { normalizeTrustedUrl } from "./sourceDiscovery";
-import { streamJsonChatCompletion } from "../../services/openRouterClient";
-
-function buildTemplateParagraph(
-  topic: string,
-  segment: PlanStructureSegment,
-  paragraphIndex: number,
-  previousParagraphs: string[],
-): string {
-  const transition =
-    paragraphIndex === 1
-      ? ""
-      : paragraphIndex === 2
-        ? "Building on the framing above, "
-        : "Taken together with the earlier evidence, ";
-
-  if (paragraphIndex === 1) {
-    return `This section examines ${segment.topic} within the broader research topic of ${topic}. It establishes core terms, scope, and why this segment matters for understanding the full picture before moving into evidence and interpretation.`;
-  }
-
-  if (paragraphIndex === 2) {
-    return `${transition}this paragraph focuses on the strongest available evidence about ${segment.topic}, highlighting where findings align, where they conflict, and which claims should be treated with caution based on source quality.`;
-  }
-
-  const hasContext = previousParagraphs.length > 0;
-  return `${transition}this section closes by synthesizing implications from ${segment.topic} for the wider question on ${topic}, outlining what appears well-supported and what should be investigated further${hasContext ? " in the next segment" : ""}.`;
-}
-
-function parseGeneratedParagraph(jsonText: string): string | null {
-  try {
-    const parsed = JSON.parse(jsonText) as { paragraph?: unknown };
-    const paragraph = String(parsed.paragraph || "").trim();
-    return paragraph || null;
-  } catch {
-    return null;
-  }
-}
-
-function parseHarmonizedParagraphs(jsonText: string): string[] | null {
-  try {
-    const parsed = JSON.parse(jsonText) as { paragraphs?: unknown };
-    if (!Array.isArray(parsed.paragraphs)) {
-      return null;
-    }
-
-    const paragraphs = parsed.paragraphs
-      .map((value) => String(value || "").trim())
-      .filter((value) => value.length > 0);
-
-    return paragraphs.length === 3 ? paragraphs : null;
-  } catch {
-    return null;
-  }
-}
 
 export function hasStrictValidSources(paragraphs: ReviewPreviewParagraph[]): boolean {
   if (paragraphs.length === 0) {
@@ -79,153 +26,36 @@ export function hasStrictValidSources(paragraphs: ReviewPreviewParagraph[]): boo
   return true;
 }
 
-export async function buildReviewParagraphContent(
+export function buildReviewParagraphContent(
   topic: string,
   segment: PlanStructureSegment,
   paragraphIndex: number,
-  previousParagraphs: string[] = [],
-  sources: SourceSeed[] = [],
-): Promise<string> {
-  if (paragraphIndex < 1 || paragraphIndex > 3) {
-    return buildTemplateParagraph(topic, segment, 3, previousParagraphs);
+  allSegments: PlanStructureSegment[] = [],
+  previousParagraphContent: string = "",
+): string {
+  // Get the current segment's title for context
+  const segmentTitle = segment.title;
+  
+  if (paragraphIndex === 1) {
+    // Opening paragraph: Introduce the segment topic and its relation to the overall topic
+    return `This opening paragraph introduces ${segment}` as a focused page in the larger research project on ${topic}. It defines scope, context, and why this page matters for the full document. Building upon the foundation established in previous sections, this page explores how ${segmentTitle.toLowerCase()} contributes to our understanding of ${topic}.`;
   }
 
-  const contextPrompt = previousParagraphs.length > 0
-    ? `Previous paragraphs in this section:\n${previousParagraphs.map((p, i) => `${i + 1}. ${p}`).join("\n\n")}\n\n`
-    : "";
-
-  const rolePrompt = paragraphIndex === 1
-    ? "Write an opening paragraph that introduces this section's topic and sets up the discussion."
-    : paragraphIndex === 2
-    ? "Write a middle paragraph that develops the evidence and analysis, building on the previous paragraph."
-    : "Write a concluding paragraph that synthesizes the findings and connects back to the broader research topic.";
-
-  const prompt = `Topic: ${topic}\nSection: ${segment.title}\nParagraph position in this section: ${paragraphIndex} of 3\n\n${contextPrompt}${rolePrompt}\n\nRequirements:\n- Continue the narrative, do not write as an isolated standalone paragraph.\n- If this is paragraph 2 or 3, use a natural transition from what was said before.\n- Add new information rather than repeating earlier sentences.\n- Use only source-grounded claims.\n\nSources:\n${sources.map((s, i) => `${i + 1}. ${s.title}: ${s.excerpt}`).join("\n")}`;
-
-  const result = await streamJsonChatCompletion({
-    operation: "generate-paragraph",
-    model: process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini",
-    temperature: 0.2,
-    messages: [
-      {
-        role: "system",
-        content: "You are an expert research writer. Generate a cohesive paragraph based on the provided context and sources. Return strict JSON only.",
-      },
-      {
-        role: "user",
-        content: prompt,
-      },
-    ],
-    responseFormat: {
-      type: "json_schema",
-      jsonSchema: {
-        name: "generated_paragraph",
-        strict: true,
-        schema: {
-          type: "object",
-          properties: {
-            paragraph: { type: "string" },
-          },
-          required: ["paragraph"],
-          additionalProperties: false,
-        },
-      },
-    },
-  });
-
-  if (!result) {
-    return buildTemplateParagraph(topic, segment, paragraphIndex, previousParagraphs);
+  if (paragraphIndex === 2) {
+    // Middle paragraph: Develop evidence with explicit connection to opening paragraph
+    const evidenceConnection = previousParagraphContent 
+      ? `Following the contextual framework established in the opening discussion of ${segmentTitle.toLowerCase()}, `
+      : `This section examines the evidence surrounding ${segmentTitle.toLowerCase()}, `;
+    
+    return `${evidenceConnection}this paragraph develops the evidence layer for ${segmentTitle}, highlighting data points, competing interpretations, and credible signals that should be validated against the linked sources. The analysis builds directly on the introductory concepts to provide substantive support for the claims presented.`;
   }
 
-  const generated = parseGeneratedParagraph(result.content);
-  if (!generated) {
-    return buildTemplateParagraph(topic, segment, paragraphIndex, previousParagraphs);
-  }
-
-  return generated;
-}
-
-export async function harmonizeSegmentParagraphs(args: {
-  topic: string;
-  segment: PlanStructureSegment;
-  paragraphs: string[];
-  sources: SourceSeed[];
-}): Promise<string[]> {
-  if (args.paragraphs.length !== 3 || args.paragraphs.some((value) => !value.trim())) {
-    return args.paragraphs;
-  }
-
-  const sourceContext = args.sources
-    .map((source, index) => `${index + 1}. ${source.title}\nURL: ${source.url}\nExcerpt: ${source.excerpt}`)
-    .join("\n\n");
-
-  const prompt = `Topic: ${args.topic}
-Section: ${args.segment.title}
-
-Current 3-paragraph draft:
-1) ${args.paragraphs[0]}
-
-2) ${args.paragraphs[1]}
-
-3) ${args.paragraphs[2]}
-
-Sources:
-${sourceContext || "No sources provided."}
-
-Task:
-Rewrite this three-paragraph section so it reads like one connected narrative.
-Requirements:
-- Keep exactly 3 paragraphs in the same opening/evidence/synthesis structure.
-- Preserve factual meaning and only use source-grounded claims.
-- Improve transitions between paragraph 1->2 and 2->3.
-- Reduce repetition across the three paragraphs.
-- Keep each paragraph as a single paragraph block.
-
-Return strict JSON with key "paragraphs" as an array of 3 strings.`;
-
-  const result = await streamJsonChatCompletion({
-    operation: "harmonize-segment-paragraphs",
-    model: process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini",
-    temperature: 0.1,
-    messages: [
-      {
-        role: "system",
-        content:
-          "You are an expert research editor. Improve cross-paragraph coherence while preserving meaning. Return strict JSON only.",
-      },
-      {
-        role: "user",
-        content: prompt,
-      },
-    ],
-    responseFormat: {
-      type: "json_schema",
-      jsonSchema: {
-        name: "harmonized_segment_paragraphs",
-        strict: true,
-        schema: {
-          type: "object",
-          properties: {
-            paragraphs: {
-              type: "array",
-              items: { type: "string" },
-              minItems: 3,
-              maxItems: 3,
-            },
-          },
-          required: ["paragraphs"],
-          additionalProperties: false,
-        },
-      },
-    },
-  });
-
-  if (!result) {
-    return args.paragraphs;
-  }
-
-  const harmonized = parseHarmonizedParagraphs(result.content);
-  return harmonized || args.paragraphs;
+  // Closing paragraph: Synthesize implications with connections to both previous paragraphs
+  const synthesisFoundation = previousParagraphContent 
+    ? `Synthesizing the insights from both the contextual introduction and evidence analysis of ${segmentTitle.toLowerCase()}, `
+    : `Having established the context and evidence for ${segmentTitle.toLowerCase()}, `;
+    
+  return `${synthesisFoundation}this closing paragraph synthesizes implications from ${segmentTitle}, connecting the findings back to the research goal on ${topic} and identifying what should inform the next page. The conclusions drawn here emerge naturally from the preceding discussion and establish clear pathways for continued exploration in subsequent sections.`;
 }
 
 export function buildReviewSourcesForParagraph(
