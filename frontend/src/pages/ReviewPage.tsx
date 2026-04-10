@@ -9,6 +9,9 @@ interface ReviewPageProps {
   planId: string | null
   onError: (error: string) => void
   onParagraphGenerationStateChange?: (hasGeneratedParagraphs: boolean) => void
+  onApprovedDraftMarkdownChange?: (markdown: string) => void
+  onApprovedDraftLoadingChange?: (isLoading: boolean) => void
+  onApprovedDraftErrorChange?: (message: string | null) => void
 }
 
 export function ReviewPage({
@@ -17,6 +20,9 @@ export function ReviewPage({
   planId,
   onError,
   onParagraphGenerationStateChange,
+  onApprovedDraftMarkdownChange,
+  onApprovedDraftLoadingChange,
+  onApprovedDraftErrorChange,
 }: ReviewPageProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [isGeneratingPreview, setIsGeneratingPreview] = useState(false)
@@ -204,6 +210,10 @@ export function ReviewPage({
     const hasGeneratedParagraphs = liveParagraphs.some((paragraph) => paragraph.content.trim().length > 0)
     onParagraphGenerationStateChange?.(hasGeneratedParagraphs)
   }, [liveParagraphs, onParagraphGenerationStateChange])
+
+  useEffect(() => {
+    onApprovedDraftMarkdownChange?.(approvedDraftMarkdown)
+  }, [approvedDraftMarkdown, onApprovedDraftMarkdownChange])
 
   async function saveEditing(paragraphId: string) {
     const nextContent = editingDraft.trim()
@@ -578,12 +588,17 @@ export function ReviewPage({
 
     if (!draftPlanId || !rawApprovedDraftMarkdown) {
       setApprovedDraftMarkdown('')
+      onApprovedDraftLoadingChange?.(false)
+      onApprovedDraftErrorChange?.(null)
       return
     }
 
     const controller = new AbortController()
 
     async function loadPolishedDraftMarkdown() {
+      onApprovedDraftLoadingChange?.(true)
+      onApprovedDraftErrorChange?.(null)
+
       const query = new URLSearchParams({
         planId: draftPlanId,
       })
@@ -602,12 +617,18 @@ export function ReviewPage({
         const payload = (await response.json()) as { markdown?: string }
         const polished = String(payload.markdown || '').trim()
         setApprovedDraftMarkdown(polished || rawApprovedDraftMarkdown)
+        onApprovedDraftErrorChange?.(null)
       } catch (draftError) {
         if ((draftError as { name?: string }).name === 'AbortError') {
           return
         }
 
+        onApprovedDraftErrorChange?.(
+          draftError instanceof Error ? draftError.message : 'Failed to load polished markdown draft.',
+        )
         setApprovedDraftMarkdown(rawApprovedDraftMarkdown)
+      } finally {
+        onApprovedDraftLoadingChange?.(false)
       }
     }
 
@@ -616,7 +637,14 @@ export function ReviewPage({
     return () => {
       controller.abort()
     }
-  }, [apiBaseUrl, sessionId, reviewData, rawApprovedDraftMarkdown])
+  }, [
+    apiBaseUrl,
+    sessionId,
+    reviewData,
+    rawApprovedDraftMarkdown,
+    onApprovedDraftLoadingChange,
+    onApprovedDraftErrorChange,
+  ])
 
   async function handleDownloadApprovedDraftMarkdown() {
     if (!reviewData || !approvedDraftMarkdown) {

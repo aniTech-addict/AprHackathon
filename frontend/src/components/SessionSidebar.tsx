@@ -11,6 +11,9 @@ interface SessionSidebarProps {
   onSessionSelect?: (sessionId: string) => void;
   markdownSessionId?: string | null;
   markdownPlanId?: string | null;
+  markdownContent?: string;
+  markdownLoading?: boolean;
+  markdownError?: string | null;
 }
 
 export function SessionSidebar({
@@ -22,6 +25,9 @@ export function SessionSidebar({
   onSessionSelect,
   markdownSessionId = null,
   markdownPlanId = null,
+  markdownContent,
+  markdownLoading,
+  markdownError,
 }: SessionSidebarProps) {
   const [sessions, setSessions] = useState<SessionListItem[]>([]);
   const [markdown, setMarkdown] = useState("");
@@ -30,6 +36,12 @@ export function SessionSidebar({
 
   useEffect(() => {
     if (!isOpen) return;
+
+    if (mode === "markdown" && markdownContent !== undefined) {
+      setLoading(false);
+      setError(null);
+      return;
+    }
 
     setLoading(true);
     setError(null);
@@ -78,7 +90,11 @@ export function SessionSidebar({
         setError("Failed to load sessions");
         setLoading(false);
       });
-  }, [apiBaseUrl, isOpen, markdownPlanId, markdownSessionId, mode]);
+  }, [apiBaseUrl, isOpen, markdownContent, markdownPlanId, markdownSessionId, mode]);
+
+  const effectiveLoading = mode === "markdown" ? (markdownLoading ?? loading) : loading;
+  const effectiveError = mode === "markdown" ? (markdownError ?? error) : error;
+  const effectiveMarkdown = mode === "markdown" ? (markdownContent ?? markdown) : "";
 
   return (
     <>
@@ -106,22 +122,22 @@ export function SessionSidebar({
         </div>
 
         <div className="sidebar-content">
-          {loading && <div className="sidebar-loading">Loading...</div>}
-          {error && <div className="sidebar-error">{error}</div>}
+          {effectiveLoading && <div className="sidebar-loading">Loading...</div>}
+          {effectiveError && <div className="sidebar-error">{effectiveError}</div>}
 
-          {!loading && !error && mode === "markdown" && !markdown.trim() && (
+          {!effectiveLoading && !effectiveError && mode === "markdown" && !effectiveMarkdown.trim() && (
             <div className="sidebar-empty">No approved content yet</div>
           )}
 
-          {!loading && !error && mode === "markdown" && markdown.trim() && (
-            <pre className="sidebar-markdown">{markdown}</pre>
+          {!effectiveLoading && !effectiveError && mode === "markdown" && effectiveMarkdown.trim() && (
+            <pre className="sidebar-markdown">{effectiveMarkdown}</pre>
           )}
 
-          {!loading && !error && mode === "sessions" && sessions.length === 0 && (
+          {!effectiveLoading && !effectiveError && mode === "sessions" && sessions.length === 0 && (
             <div className="sidebar-empty">No sessions yet</div>
           )}
 
-          {!loading && !error && mode === "sessions" && sessions.length > 0 && (
+          {!effectiveLoading && !effectiveError && mode === "sessions" && sessions.length > 0 && (
             <ul className="sessions-list">
               {sessions.map((session) => (
                 <li
