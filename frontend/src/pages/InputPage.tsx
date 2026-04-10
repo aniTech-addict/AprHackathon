@@ -1,6 +1,7 @@
 import type { FormEvent } from 'react'
 import React from 'react'
 import type { StartResearchResponse } from '../types'
+import { AsyncProgressPanel } from '../components/AsyncProgressPanel'
 
 interface InputPageProps {
   apiBaseUrl: string
@@ -102,6 +103,20 @@ export function InputPage({ apiBaseUrl, onInputSubmit, onError }: InputPageProps
           <button type="submit" className="button" disabled={isSubmitting}>
             {isSubmitting ? 'Categorizing...' : 'Start Research Input Phase'}
           </button>
+
+          {isSubmitting ? (
+            <AsyncProgressPanel
+              compact
+              title="Analyzing your request"
+              description="We are classifying your topic and deciding whether to ask follow-up questions or move directly to planning."
+              expectedSeconds={22}
+              steps={[
+                'Checking topic clarity',
+                'Deciding next workflow step',
+                'Preparing your next screen',
+              ]}
+            />
+          ) : null}
         </form>
 
         {error ? <p className="error">{error}</p> : null}

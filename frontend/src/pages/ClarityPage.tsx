@@ -1,5 +1,6 @@
 import type { FormEvent } from 'react'
 import { useState } from 'react'
+import { AsyncProgressPanel } from '../components/AsyncProgressPanel'
 
 interface ClarityPageProps {
   apiBaseUrl: string
@@ -200,6 +201,20 @@ export function ClarityPage({
                 ? 'Submit Clarifications'
                 : 'Continue to Planning'}
           </button>
+
+          {isSubmitting ? (
+            <AsyncProgressPanel
+              compact
+              title="Evaluating clarity inputs"
+              description="We are combining your answers with the original topic to determine whether planning can start now."
+              expectedSeconds={28}
+              steps={[
+                'Parsing your answers',
+                'Evaluating ambiguity and scope',
+                'Routing to planning or next follow-up round',
+              ]}
+            />
+          ) : null}
         </form>
 
         {notice ? <p className="success-note">{notice}</p> : null}

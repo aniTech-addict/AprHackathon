@@ -1,6 +1,7 @@
 import type { FormEvent } from 'react'
 import { useState } from 'react'
 import { ResizableTwoColumnLayout } from '../components/ResizableTwoColumnLayout'
+import { AsyncProgressPanel } from '../components/AsyncProgressPanel'
 import type { PlanningResponse, ResearchSegment } from '../types'
 
 interface PlanningPageProps {
@@ -321,6 +322,21 @@ export function PlanningPage({ apiBaseUrl, sessionId, onError, onPlanApproved }:
             <button type="submit" className="button" disabled={isSubmitting}>
               {isSubmitting ? 'Generating Plan...' : 'Generate Research Plan'}
             </button>
+
+            {isSubmitting ? (
+              <AsyncProgressPanel
+                compact
+                title="Generating research plan"
+                description="AI is structuring your topic into segments, research angles, and search queries."
+                expectedSeconds={45}
+                steps={[
+                  'Analyzing topic and goals',
+                  'Drafting segment structure',
+                  'Generating targeted queries',
+                  'Validating plan consistency',
+                ]}
+              />
+            ) : null}
           </form>
 
           {error ? <p className="error">{error}</p> : null}
@@ -497,6 +513,26 @@ export function PlanningPage({ apiBaseUrl, sessionId, onError, onPlanApproved }:
           </div>
           }
         />
+
+        {isSavingDraft ? (
+          <AsyncProgressPanel
+            compact
+            title="Saving plan draft"
+            description="Persisting your latest segment edits to the backend."
+            expectedSeconds={12}
+            steps={['Validating plan fields', 'Saving draft', 'Refreshing plan state']}
+          />
+        ) : null}
+
+        {isApproving ? (
+          <AsyncProgressPanel
+            compact
+            title="Approving plan"
+            description="Finalizing the plan and preparing the review preview workflow."
+            expectedSeconds={18}
+            steps={['Locking plan version', 'Preparing review pages', 'Navigating to source review']}
+          />
+        ) : null}
       </section>
     </main>
   )

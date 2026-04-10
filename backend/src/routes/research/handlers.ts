@@ -15,6 +15,7 @@ import {
   ensureReviewPreview,
   getReviewPreviewByPlanId,
   groupParagraphsByPage,
+  isReviewPreviewGenerationInProgress,
   getReviewPageProgress,
   replaceParagraphContent,
   updateReviewParagraphContent,
@@ -510,10 +511,6 @@ export async function reviewPreviewHandler(
       segments,
     });
 
-    if (paragraphs.length === 0) {
-      return res.status(404).json({ message: "No review paragraphs available." });
-    }
-
     const payload = await buildReviewPreviewPayload(
       sessionId,
       planRow.id,
@@ -521,7 +518,10 @@ export async function reviewPreviewHandler(
       planRow.status,
     );
 
-    return res.status(200).json(payload);
+    return res.status(200).json({
+      ...payload,
+      isGenerating: isReviewPreviewGenerationInProgress(sessionId, planRow.id),
+    });
   } catch (error) {
     console.error("Error generating review preview:", error);
     return res.status(500).json({

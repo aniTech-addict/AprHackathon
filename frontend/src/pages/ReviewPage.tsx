@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ResizableTwoColumnLayout } from '../components/ResizableTwoColumnLayout'
+import { AsyncProgressPanel } from '../components/AsyncProgressPanel'
 import type { ReviewExportResponse, ReviewPage, ReviewParagraph, ReviewPreviewResponse } from '../types'
 
 interface ReviewPageProps {
@@ -11,6 +12,7 @@ interface ReviewPageProps {
 
 export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPageProps) {
   const [isLoading, setIsLoading] = useState(true)
+  const [isGeneratingPreview, setIsGeneratingPreview] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
   const [isApproving, setIsApproving] = useState(false)
   const [busyParagraphId, setBusyParagraphId] = useState<string | null>(null)
@@ -26,6 +28,7 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
   const [isFrameLoading, setIsFrameLoading] = useState(false)
   const [editingParagraphId, setEditingParagraphId] = useState<string | null>(null)
   const [editingDraft, setEditingDraft] = useState('')
+  const [busyOperationLabel, setBusyOperationLabel] = useState<string | null>(null)
 
   function startEditing(paragraph: ReviewParagraph) {
     setEditingParagraphId(paragraph.id)
@@ -67,6 +70,15 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
     }
 
     setBusyParagraphId(paragraphId)
+    setBusyOperationLabel(
+      actionPathSuffix === '/approve'
+        ? 'Approving paragraph'
+        : init.method === 'DELETE'
+          ? 'Deleting paragraph'
+          : init.body && String(init.body).includes('"mode":"ai"')
+            ? 'AI refining paragraph'
+            : 'Updating paragraph',
+    )
     setError(null)
 
     try {
@@ -89,6 +101,7 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
       onError(errorMessage)
     } finally {
       setBusyParagraphId(null)
+      setBusyOperationLabel(null)
     }
   }
 
@@ -183,6 +196,7 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
 
   async function handleExport() {
     setIsExporting(true)
+    setBusyOperationLabel('Exporting review package')
     setExportNotice(null)
 
     try {
@@ -262,6 +276,7 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
       onError(errorMessage)
     } finally {
       setIsExporting(false)
+      setBusyOperationLabel(null)
     }
   }
 
@@ -271,6 +286,7 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
     }
 
     setIsApproving(true)
+    setBusyOperationLabel('Approving page and generating next one')
     setError(null)
 
     try {
@@ -311,14 +327,18 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
       onError(errorMessage)
     } finally {
       setIsApproving(false)
+      setBusyOperationLabel(null)
     }
   }
 
   useEffect(() => {
     const controller = new AbortController()
+    let pollTimeout: number | null = null
 
-    async function loadReviewData() {
-      setIsLoading(true)
+    async function loadReviewData(silent = false) {
+      if (!silent) {
+        setIsLoading(true)
+      }
       setError(null)
 
       const query = planId ? `?planId=${encodeURIComponent(planId)}` : ''
@@ -335,11 +355,23 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
 
         const payload = (await response.json()) as ReviewPreviewResponse
         applyReviewPayload(payload)
-        setActivePageIndex(0)
+        setIsGeneratingPreview(Boolean(payload.isGenerating))
 
-        const firstParagraph = payload.pages?.[0]?.paragraphs?.[0] || payload.paragraphs[0] || null
-        setActiveParagraphId(firstParagraph?.id || null)
-        setActiveSourceId(firstParagraph?.sources[0]?.id || null)
+        const hasActiveSelection = Boolean(activeParagraphId)
+        if (!hasActiveSelection) {
+          setActivePageIndex(0)
+          const firstParagraph = payload.pages?.[0]?.paragraphs?.[0] || payload.paragraphs[0] || null
+          setActiveParagraphId(firstParagraph?.id || null)
+          setActiveSourceId(firstParagraph?.sources[0]?.id || null)
+        } else {
+          syncSelectionAfterPayload(payload)
+        }
+
+        if (payload.isGenerating) {
+          pollTimeout = window.setTimeout(() => {
+            void loadReviewData(true)
+          }, 1800)
+        }
       } catch (loadError) {
         if ((loadError as { name?: string }).name === 'AbortError') {
           return
@@ -350,7 +382,9 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
         setError(errorMessage)
         onError(errorMessage)
       } finally {
-        setIsLoading(false)
+        if (!silent) {
+          setIsLoading(false)
+        }
       }
     }
 
@@ -358,6 +392,9 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
 
     return () => {
       controller.abort()
+      if (pollTimeout) {
+        window.clearTimeout(pollTimeout)
+      }
     }
   }, [apiBaseUrl, sessionId, planId, onError])
 
@@ -445,6 +482,19 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
           <h1>Phase 4: Source Review</h1>
           <p className="lead">Loading paragraph-to-source preview...</p>
         </header>
+
+        <section className="card">
+          <AsyncProgressPanel
+            title="Preparing review preview"
+            description="We are loading generated paragraphs, linked sources, and the current review progress state."
+            expectedSeconds={40}
+            steps={[
+              'Loading approved plan and segment context',
+              'Fetching paragraph drafts and citations',
+              'Preparing source browser and page navigation',
+            ]}
+          />
+        </section>
       </main>
     )
   }
@@ -510,6 +560,38 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
           {exportNotice ? <p className="success-note review-success-note">{exportNotice}</p> : null}
         </div>
       </header>
+
+      {isGeneratingPreview ? (
+        <section className="card">
+          <AsyncProgressPanel
+            compact
+            title="Building page content"
+            description="Paragraphs are generated one-by-one and appear below as soon as each one is ready."
+            expectedSeconds={42}
+            steps={[
+              'Generating paragraph drafts',
+              'Attaching sources to each paragraph',
+              'Refreshing live preview incrementally',
+            ]}
+          />
+        </section>
+      ) : null}
+
+      {busyOperationLabel ? (
+        <section className="card">
+          <AsyncProgressPanel
+            compact
+            title={busyOperationLabel}
+            description="The backend is processing this request. This can take longer when AI rewriting or source refresh is involved."
+            expectedSeconds={35}
+            steps={[
+              'Sending request to backend',
+              'Processing with AI and validation',
+              'Refreshing updated review state',
+            ]}
+          />
+        </section>
+      ) : null}
 
       <section className="card">
         <ResizableTwoColumnLayout

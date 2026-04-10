@@ -82,6 +82,7 @@ export interface ReviewPreviewResponse {
   planId: string
   topic: string
   planStatus: string
+  isGenerating?: boolean
   approvedSegmentOrders: number[]
   pages: ReviewPage[]
   paragraphs: ReviewParagraph[]
