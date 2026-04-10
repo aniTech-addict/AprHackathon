@@ -5,15 +5,27 @@ import {
   createSession,
   updateSessionWithClarity,
   getSession,
+  listSessions,
   type ClarityData,
 } from "../../repositories/sessionRepository";
 import {
+  approveReviewParagraph,
   approveReviewPage,
+  deleteReviewParagraph,
   ensureReviewPreview,
+  getReviewPreviewByPlanId,
   groupParagraphsByPage,
   getReviewPageProgress,
+  replaceParagraphContent,
+  updateReviewParagraphContent,
   type PlanStructureSegment,
+  type ReviewPreviewParagraph,
 } from "../../repositories/reviewPreviewRepository";
+import {
+  harmonizeSegmentFlowWithPrevious,
+  refineParagraphWithAi,
+  stabilizeParagraphFlow,
+} from "../../services/reviewRefinementService";
 import { decideClarityNextStep } from "../../services/clarityLoopService";
 import { classifyInput } from "../../services/inputClassifier";
 import {
@@ -30,6 +42,8 @@ import type {
   ApproveReviewPageBody,
   ClarityBody,
   PlanResearchBody,
+  ReviewParagraphActionBody,
+  ReviewParagraphRefineBody,
   StartResearchBody,
   UpdatePlanBody,
 } from "./types";
@@ -105,6 +119,55 @@ function normalizePlanSegments(structure: unknown): PlanStructureSegment[] {
   }
 
   return segments.sort((a, b) => a.order - b.order);
+}
+
+function getParagraphContext(
+  paragraphs: ReviewPreviewParagraph[],
+  paragraphId: string,
+): {
+  paragraph: ReviewPreviewParagraph;
+  previous: ReviewPreviewParagraph | null;
+  next: ReviewPreviewParagraph | null;
+} | null {
+  const sorted = [...paragraphs].sort((a, b) => a.order - b.order);
+  const index = sorted.findIndex((paragraph) => paragraph.id === paragraphId);
+  if (index < 0) {
+    return null;
+  }
+
+  return {
+    paragraph: sorted[index],
+    previous: index > 0 ? sorted[index - 1] : null,
+    next: index < sorted.length - 1 ? sorted[index + 1] : null,
+  };
+}
+
+async function buildReviewPreviewPayload(
+  sessionId: string,
+  planId: string,
+  topic: string,
+  planStatus: string,
+): Promise<{
+  sessionId: string;
+  planId: string;
+  topic: string;
+  planStatus: string;
+  approvedSegmentOrders: number[];
+  pages: ReturnType<typeof groupParagraphsByPage>;
+  paragraphs: ReviewPreviewParagraph[];
+}> {
+  const paragraphs = await getReviewPreviewByPlanId(sessionId, planId);
+  const progress = await getReviewPageProgress(sessionId, planId);
+
+  return {
+    sessionId,
+    planId,
+    topic,
+    planStatus,
+    approvedSegmentOrders: progress.approvedSegmentOrders,
+    pages: groupParagraphsByPage(topic, paragraphs),
+    paragraphs,
+  };
 }
 
 /**
@@ -446,17 +509,19 @@ export async function reviewPreviewHandler(
       topic: session.topic,
       segments,
     });
-    const progress = await getReviewPageProgress(sessionId, planRow.id);
 
-    return res.status(200).json({
+    if (paragraphs.length === 0) {
+      return res.status(404).json({ message: "No review paragraphs available." });
+    }
+
+    const payload = await buildReviewPreviewPayload(
       sessionId,
-      planId: planRow.id,
-      topic: session.topic,
-      planStatus: planRow.status,
-      approvedSegmentOrders: progress.approvedSegmentOrders,
-      pages: groupParagraphsByPage(session.topic, paragraphs),
-      paragraphs,
-    });
+      planRow.id,
+      session.topic,
+      planRow.status,
+    );
+
+    return res.status(200).json(payload);
   } catch (error) {
     console.error("Error generating review preview:", error);
     return res.status(500).json({
@@ -498,6 +563,37 @@ export async function approveReviewPageHandler(
       return res.status(404).json({ message: "No plan segments available for approval." });
     }
 
+    await ensureReviewPreview({
+      sessionId,
+      planId: planRow.id,
+      topic: session.topic,
+      segments,
+    });
+
+    const paragraphsBeforeApprove = await getReviewPreviewByPlanId(sessionId, planRow.id);
+    const previousPageParagraphs = paragraphsBeforeApprove.filter(
+      (paragraph) =>
+        paragraph.segmentOrder === segmentOrder - 1 && paragraph.status === "approved",
+    );
+    const currentPageParagraphs = paragraphsBeforeApprove.filter(
+      (paragraph) => paragraph.segmentOrder === segmentOrder && paragraph.status === "approved",
+    );
+
+    const transitionAdjustments = await harmonizeSegmentFlowWithPrevious(
+      session.topic,
+      previousPageParagraphs,
+      currentPageParagraphs,
+    );
+
+    for (const adjustment of transitionAdjustments) {
+      await replaceParagraphContent({
+        sessionId,
+        planId: planRow.id,
+        paragraphId: adjustment.paragraphId,
+        nextContent: adjustment.nextContent,
+      });
+    }
+
     const updatedParagraphs = await approveReviewPage({
       sessionId,
       planId: planRow.id,
@@ -520,6 +616,188 @@ export async function approveReviewPageHandler(
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to approve review page.";
     console.error("Error approving review page:", error);
+    return res.status(400).json({ message });
+  }
+}
+
+export async function refineReviewParagraphHandler(
+  req: Request,
+  res: Response,
+): Promise<Response> {
+  const sessionId = String(req.params.sessionId || "");
+  const paragraphId = String(req.params.paragraphId || "").trim();
+  const body = req.body as ReviewParagraphRefineBody;
+  const planId = String(body.planId || "").trim();
+  const mode = body.mode === "ai" ? "ai" : "manual";
+
+  if (!planId) {
+    return res.status(400).json({ message: "Plan ID is required." });
+  }
+
+  if (!paragraphId) {
+    return res.status(400).json({ message: "Paragraph ID is required." });
+  }
+
+  const session = await getSession(sessionId);
+  if (!session) {
+    return res.status(404).json({ message: "Session not found." });
+  }
+
+  try {
+    const planRow = await getPlanForReview(sessionId, planId);
+    if (!planRow) {
+      return res.status(404).json({ message: "No research plan found." });
+    }
+
+    const paragraphs = await getReviewPreviewByPlanId(sessionId, planRow.id);
+    const context = getParagraphContext(paragraphs, paragraphId);
+    if (!context) {
+      return res.status(404).json({ message: "Paragraph not found in this plan." });
+    }
+
+    const requestedContent = String(body.content || "").trim();
+    let nextContent = requestedContent;
+
+    if (mode === "manual") {
+      if (!requestedContent) {
+        return res.status(400).json({ message: "Manual refinement requires content." });
+      }
+    } else {
+      const aiRefined = await refineParagraphWithAi({
+        topic: session.topic,
+        segmentTitle: context.paragraph.segmentTitle,
+        paragraphContent: context.paragraph.content,
+        sources: context.paragraph.sources,
+        instruction: body.instruction,
+      });
+
+      if (!aiRefined) {
+        return res.status(503).json({
+          message: "AI refinement is currently unavailable. Please refine manually.",
+        });
+      }
+
+      nextContent = aiRefined;
+    }
+
+    const stabilized = await stabilizeParagraphFlow({
+      topic: session.topic,
+      segmentTitle: context.paragraph.segmentTitle,
+      previousParagraphContent: context.previous?.content || null,
+      nextParagraphContent: context.next?.content || null,
+      previousVersionContent: context.paragraph.previousContent,
+      currentDraft: nextContent,
+    });
+
+    await updateReviewParagraphContent({
+      sessionId,
+      planId: planRow.id,
+      paragraphId,
+      nextContent: stabilized,
+      editedBy: mode,
+    });
+
+    const payload = await buildReviewPreviewPayload(
+      sessionId,
+      planRow.id,
+      session.topic,
+      planRow.status,
+    );
+
+    return res.status(200).json(payload);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to refine paragraph.";
+    console.error("Error refining review paragraph:", error);
+    return res.status(400).json({ message });
+  }
+}
+
+export async function approveReviewParagraphHandler(
+  req: Request,
+  res: Response,
+): Promise<Response> {
+  const sessionId = String(req.params.sessionId || "");
+  const paragraphId = String(req.params.paragraphId || "").trim();
+  const body = req.body as ReviewParagraphActionBody;
+  const planId = String(body.planId || "").trim();
+
+  if (!planId) {
+    return res.status(400).json({ message: "Plan ID is required." });
+  }
+
+  if (!paragraphId) {
+    return res.status(400).json({ message: "Paragraph ID is required." });
+  }
+
+  const session = await getSession(sessionId);
+  if (!session) {
+    return res.status(404).json({ message: "Session not found." });
+  }
+
+  try {
+    const planRow = await getPlanForReview(sessionId, planId);
+    if (!planRow) {
+      return res.status(404).json({ message: "No research plan found." });
+    }
+
+    await approveReviewParagraph({ sessionId, planId: planRow.id, paragraphId });
+
+    const payload = await buildReviewPreviewPayload(
+      sessionId,
+      planRow.id,
+      session.topic,
+      planRow.status,
+    );
+
+    return res.status(200).json(payload);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to approve paragraph.";
+    console.error("Error approving review paragraph:", error);
+    return res.status(400).json({ message });
+  }
+}
+
+export async function deleteReviewParagraphHandler(
+  req: Request,
+  res: Response,
+): Promise<Response> {
+  const sessionId = String(req.params.sessionId || "");
+  const paragraphId = String(req.params.paragraphId || "").trim();
+  const body = req.body as ReviewParagraphActionBody;
+  const planId = String(body.planId || "").trim();
+
+  if (!planId) {
+    return res.status(400).json({ message: "Plan ID is required." });
+  }
+
+  if (!paragraphId) {
+    return res.status(400).json({ message: "Paragraph ID is required." });
+  }
+
+  const session = await getSession(sessionId);
+  if (!session) {
+    return res.status(404).json({ message: "Session not found." });
+  }
+
+  try {
+    const planRow = await getPlanForReview(sessionId, planId);
+    if (!planRow) {
+      return res.status(404).json({ message: "No research plan found." });
+    }
+
+    await deleteReviewParagraph({ sessionId, planId: planRow.id, paragraphId });
+
+    const payload = await buildReviewPreviewPayload(
+      sessionId,
+      planRow.id,
+      session.topic,
+      planRow.status,
+    );
+
+    return res.status(200).json(payload);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to delete paragraph.";
+    console.error("Error deleting review paragraph:", error);
     return res.status(400).json({ message });
   }
 }
@@ -606,6 +884,21 @@ export async function reviewExportHandler(
     console.error("Error exporting review data:", error);
     return res.status(500).json({
       message: "Failed to export review data.",
+    });
+  }
+}
+
+export async function listSessionsHandler(
+  req: Request,
+  res: Response,
+): Promise<Response> {
+  try {
+    const sessions = await listSessions();
+    return res.status(200).json(sessions);
+  } catch (error) {
+    console.error("Error listing sessions:", error);
+    return res.status(500).json({
+      message: "Failed to list sessions.",
     });
   }
 }

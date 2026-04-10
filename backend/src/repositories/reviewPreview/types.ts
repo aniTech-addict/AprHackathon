@@ -11,6 +11,11 @@ export interface ReviewPreviewSource {
   excerpt: string;
 }
 
+export type ReviewParagraphStatus =
+  | "pending_review"
+  | "approved"
+  | "deleted";
+
 export interface ReviewPreviewParagraph {
   id: string;
   order: number;
@@ -18,6 +23,9 @@ export interface ReviewPreviewParagraph {
   paragraphIndex: number;
   segmentTitle: string;
   content: string;
+  previousContent: string | null;
+  status: ReviewParagraphStatus;
+  lastEditedBy: "manual" | "ai" | null;
   sources: ReviewPreviewSource[];
 }
 
@@ -42,6 +50,9 @@ export interface ReviewParagraphRow {
   paragraph_index: number;
   segment_title: string;
   content: string;
+  previous_content: string | null;
+  status: ReviewParagraphStatus;
+  last_edited_by: "manual" | "ai" | null;
 }
 
 export interface ReviewSourceRow {
