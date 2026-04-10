@@ -393,6 +393,13 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
       .sort((a, b) => a.paragraphIndex - b.paragraphIndex)
   }, [activePage, liveParagraphs])
 
+  const currentPageHasPendingParagraphs = currentPageParagraphs.some(
+    (paragraph) => paragraph.status === 'pending_review',
+  )
+  const currentPageHasApprovedParagraphs = currentPageParagraphs.some(
+    (paragraph) => paragraph.status === 'approved',
+  )
+
   const currentPageApproved = Boolean(activePage && approvedSegmentOrders.includes(activePage.segmentOrder))
 
   function goToPage(nextIndex: number) {
@@ -471,7 +478,13 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
             type="button"
             className="button"
             onClick={handleApproveAndContinue}
-            disabled={!activePage || currentPageApproved || isApproving}
+            disabled={
+              !activePage ||
+              currentPageApproved ||
+              isApproving ||
+              currentPageHasPendingParagraphs ||
+              !currentPageHasApprovedParagraphs
+            }
           >
             {isApproving ? 'Approving...' : currentPageApproved ? 'Page Approved' : 'Approve & Continue'}
           </button>
@@ -544,22 +557,71 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
                               <button
                                 type="button"
                                 className="text-button"
-                                onClick={() => saveEditing(paragraph.id)}
-                                disabled={!editingDraft.trim()}
+                                onClick={() => void saveEditing(paragraph.id)}
+                                disabled={!editingDraft.trim() || busyParagraphId === paragraph.id}
                               >
-                                Save paragraph
+                                {busyParagraphId === paragraph.id ? 'Saving...' : 'Save paragraph'}
                               </button>
                               <button
                                 type="button"
                                 className="text-button danger"
                                 onClick={cancelEditing}
+                                disabled={busyParagraphId === paragraph.id}
                               >
                                 Cancel
                               </button>
                             </div>
                           </>
                         ) : (
-                          <p>{paragraph.content}</p>
+                          <>
+                            <p>{paragraph.content}</p>
+                            <div className="review-doc-paragraph-meta">
+                              <span className={`review-status-chip status-${paragraph.status}`}>
+                                {paragraph.status === 'pending_review'
+                                  ? 'Pending review'
+                                  : paragraph.status === 'approved'
+                                    ? 'Approved'
+                                    : 'Deleted'}
+                              </span>
+                              {paragraph.lastEditedBy ? (
+                                <span className="hint">Last edit: {paragraph.lastEditedBy.toUpperCase()}</span>
+                              ) : null}
+                            </div>
+                            <div className="review-doc-actions">
+                              <button
+                                type="button"
+                                className="text-button"
+                                onClick={() => startEditing(paragraph)}
+                                disabled={busyParagraphId === paragraph.id}
+                              >
+                                Manual Refine
+                              </button>
+                              <button
+                                type="button"
+                                className="text-button"
+                                onClick={() => void refineWithAi(paragraph.id)}
+                                disabled={busyParagraphId === paragraph.id}
+                              >
+                                {busyParagraphId === paragraph.id ? 'Refining...' : 'AI Refine'}
+                              </button>
+                              <button
+                                type="button"
+                                className="text-button"
+                                onClick={() => void approveParagraph(paragraph.id)}
+                                disabled={busyParagraphId === paragraph.id || paragraph.status === 'approved'}
+                              >
+                                Approve Paragraph
+                              </button>
+                              <button
+                                type="button"
+                                className="text-button danger"
+                                onClick={() => void deleteParagraph(paragraph.id)}
+                                disabled={busyParagraphId === paragraph.id}
+                              >
+                                Delete Paragraph
+                              </button>
+                            </div>
+                          </>
                         )}
                       </section>
                     )
