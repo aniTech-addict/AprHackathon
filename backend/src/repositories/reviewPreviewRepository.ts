@@ -12,6 +12,7 @@ import { discoverTrustedWebSources } from "./reviewPreview/sourceDiscovery";
 import type {
   EnsureReviewPreviewArgs,
   PlanStructureSegment,
+  ReviewParagraphStatus,
   ReviewPageProgress,
   ReviewParagraphRow,
   ReviewPreviewPage,
@@ -89,8 +90,21 @@ async function insertSegmentParagraphsAndSources(
 
     await client.query(
       `
-        INSERT INTO review_paragraphs (id, session_id, plan_id, paragraph_order, segment_order, paragraph_index, segment_title, content)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        INSERT INTO review_paragraphs (
+          id,
+          session_id,
+          plan_id,
+          paragraph_order,
+          segment_order,
+          paragraph_index,
+          segment_title,
+          content,
+          previous_content,
+          status,
+          last_edited_by,
+          approved_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULL, 'pending_review', NULL, NULL)
       `,
       [
         paragraphId,
@@ -171,9 +185,9 @@ export async function getReviewPreviewByPlanId(
 ): Promise<ReviewPreviewParagraph[]> {
   const paragraphResult = await pool.query(
     `
-      SELECT id, paragraph_order, segment_order, paragraph_index, segment_title, content
+      SELECT id, paragraph_order, segment_order, paragraph_index, segment_title, content, previous_content, status, last_edited_by
       FROM review_paragraphs
-      WHERE session_id = $1 AND plan_id = $2
+      WHERE session_id = $1 AND plan_id = $2 AND status <> 'deleted'
       ORDER BY segment_order ASC, paragraph_index ASC
     `,
     [sessionId, planId],
@@ -217,8 +231,192 @@ export async function getReviewPreviewByPlanId(
     paragraphIndex: row.paragraph_index,
     segmentTitle: row.segment_title,
     content: row.content,
+    previousContent: row.previous_content,
+    status: row.status,
+    lastEditedBy: row.last_edited_by,
     sources: sourcesByParagraph.get(row.id) || [],
   }));
+}
+
+async function getParagraphForMutation(
+  client: PoolClient,
+  args: {
+    sessionId: string;
+    planId: string;
+    paragraphId: string;
+  },
+): Promise<ReviewParagraphRow | null> {
+  const result = await client.query(
+    `
+      SELECT id, paragraph_order, segment_order, paragraph_index, segment_title, content, previous_content, status, last_edited_by
+      FROM review_paragraphs
+      WHERE id = $1 AND session_id = $2 AND plan_id = $3
+      LIMIT 1
+    `,
+    [args.paragraphId, args.sessionId, args.planId],
+  );
+
+  if (result.rows.length === 0) {
+    return null;
+  }
+
+  return result.rows[0] as ReviewParagraphRow;
+}
+
+export async function approveReviewParagraph(args: {
+  sessionId: string;
+  planId: string;
+  paragraphId: string;
+}): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const paragraph = await getParagraphForMutation(client, args);
+    if (!paragraph) {
+      throw new Error("Paragraph not found for this session and plan.");
+    }
+
+    if (paragraph.status === "deleted") {
+      throw new Error("Deleted paragraphs cannot be approved.");
+    }
+
+    await client.query(
+      `
+        UPDATE review_paragraphs
+        SET status = 'approved', approved_at = NOW(), updated_at = NOW()
+        WHERE id = $1
+      `,
+      [args.paragraphId],
+    );
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function deleteReviewParagraph(args: {
+  sessionId: string;
+  planId: string;
+  paragraphId: string;
+}): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const paragraph = await getParagraphForMutation(client, args);
+    if (!paragraph) {
+      throw new Error("Paragraph not found for this session and plan.");
+    }
+
+    await client.query(
+      `
+        UPDATE review_paragraphs
+        SET status = 'deleted', approved_at = NULL, updated_at = NOW()
+        WHERE id = $1
+      `,
+      [args.paragraphId],
+    );
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function updateReviewParagraphContent(args: {
+  sessionId: string;
+  planId: string;
+  paragraphId: string;
+  nextContent: string;
+  editedBy: "manual" | "ai";
+}): Promise<void> {
+  const content = args.nextContent.trim();
+  if (!content) {
+    throw new Error("Paragraph content cannot be empty.");
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const paragraph = await getParagraphForMutation(client, args);
+    if (!paragraph) {
+      throw new Error("Paragraph not found for this session and plan.");
+    }
+
+    if (paragraph.status === "deleted") {
+      throw new Error("Cannot refine a deleted paragraph.");
+    }
+
+    await client.query(
+      `
+        UPDATE review_paragraphs
+        SET
+          previous_content = content,
+          content = $2,
+          status = 'pending_review',
+          last_edited_by = $3,
+          approved_at = NULL,
+          updated_at = NOW()
+        WHERE id = $1
+      `,
+      [args.paragraphId, content, args.editedBy],
+    );
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function replaceParagraphContent(args: {
+  sessionId: string;
+  planId: string;
+  paragraphId: string;
+  nextContent: string;
+}): Promise<void> {
+  const content = args.nextContent.trim();
+  if (!content) {
+    return;
+  }
+
+  await pool.query(
+    `
+      UPDATE review_paragraphs
+      SET previous_content = content, content = $4, updated_at = NOW()
+      WHERE id = $1 AND session_id = $2 AND plan_id = $3 AND status <> 'deleted'
+    `,
+    [args.paragraphId, args.sessionId, args.planId, content],
+  );
+}
+
+export async function getSegmentParagraphStatuses(args: {
+  sessionId: string;
+  planId: string;
+  segmentOrder: number;
+}): Promise<ReviewParagraphStatus[]> {
+  const result = await pool.query(
+    `
+      SELECT status
+      FROM review_paragraphs
+      WHERE session_id = $1 AND plan_id = $2 AND segment_order = $3
+      ORDER BY paragraph_index ASC
+    `,
+    [args.sessionId, args.planId, args.segmentOrder],
+  );
+
+  return result.rows.map((row) => row.status as ReviewParagraphStatus);
 }
 
 export function groupParagraphsByPage(
@@ -292,6 +490,32 @@ export async function approveReviewPage(args: {
     const currentSegment = args.segments.find((segment) => segment.order === args.segmentOrder);
     if (!currentSegment) {
       throw new Error("Requested page does not exist in the active research plan.");
+    }
+
+    const segmentStatuses = await getSegmentParagraphStatuses({
+      sessionId: args.sessionId,
+      planId: args.planId,
+      segmentOrder: args.segmentOrder,
+    });
+
+    if (segmentStatuses.length === 0) {
+      throw new Error("No paragraph content exists for this page yet.");
+    }
+
+    const hasPendingReview = segmentStatuses.some(
+      (status) => status === "pending_review",
+    );
+    if (hasPendingReview) {
+      throw new Error(
+        "Approve or delete each paragraph on this page before approving the page.",
+      );
+    }
+
+    const hasApprovedParagraph = segmentStatuses.some(
+      (status) => status === "approved",
+    );
+    if (!hasApprovedParagraph) {
+      throw new Error("At least one paragraph must remain approved on this page.");
     }
 
     const existingApproval = await client.query(

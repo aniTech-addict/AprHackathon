@@ -67,6 +67,32 @@ export async function ensureCoreSchema(): Promise<void> {
     ALTER TABLE review_paragraphs
       ADD COLUMN IF NOT EXISTS paragraph_index INT NOT NULL DEFAULT 1;
 
+    ALTER TABLE review_paragraphs
+      ADD COLUMN IF NOT EXISTS previous_content TEXT;
+
+    ALTER TABLE review_paragraphs
+      ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pending_review';
+
+    ALTER TABLE review_paragraphs
+      ADD COLUMN IF NOT EXISTS last_edited_by TEXT;
+
+    ALTER TABLE review_paragraphs
+      ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ;
+
+    ALTER TABLE review_paragraphs
+      DROP CONSTRAINT IF EXISTS review_paragraphs_status_check;
+
+    ALTER TABLE review_paragraphs
+      ADD CONSTRAINT review_paragraphs_status_check
+      CHECK (status IN ('pending_review', 'approved', 'deleted'));
+
+    ALTER TABLE review_paragraphs
+      DROP CONSTRAINT IF EXISTS review_paragraphs_last_edited_by_check;
+
+    ALTER TABLE review_paragraphs
+      ADD CONSTRAINT review_paragraphs_last_edited_by_check
+      CHECK (last_edited_by IS NULL OR last_edited_by IN ('manual', 'ai'));
+
     CREATE INDEX IF NOT EXISTS idx_review_paragraphs_session_id ON review_paragraphs (session_id);
     CREATE INDEX IF NOT EXISTS idx_review_paragraphs_plan_id ON review_paragraphs (plan_id);
 

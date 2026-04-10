@@ -94,3 +94,41 @@ export async function getSession(
     preferredSites: row.preferred_sites || [],
   };
 }
+
+export interface SessionListItem {
+  id: string;
+  topic: string;
+  inputCategory: InputCategory;
+  status: string;
+  latestPlanId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function listSessions(): Promise<SessionListItem[]> {
+  const result = await pool.query(
+    `
+      SELECT
+        s.id,
+        s.topic,
+        s.input_category,
+        COALESCE(s.status, 'input_provided') as status,
+        (SELECT id FROM research_plans WHERE session_id = s.id ORDER BY created_at DESC LIMIT 1) as latest_plan_id,
+        s.created_at,
+        s.updated_at
+      FROM sessions
+      ORDER BY s.updated_at DESC
+      LIMIT 50
+    `
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id as string,
+    topic: row.topic as string,
+    inputCategory: row.input_category as InputCategory,
+    status: row.status as string,
+    latestPlanId: row.latest_plan_id as string | null,
+    createdAt: (row.created_at as Date).toISOString(),
+    updatedAt: (row.updated_at as Date).toISOString(),
+  }));
+}
