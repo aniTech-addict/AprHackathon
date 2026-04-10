@@ -82,6 +82,18 @@ export async function ensureCoreSchema(): Promise<void> {
     );
 
     CREATE INDEX IF NOT EXISTS idx_review_sources_paragraph_id ON review_sources (paragraph_id);
+
+    CREATE TABLE IF NOT EXISTS review_page_approvals (
+      id UUID PRIMARY KEY,
+      session_id UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      plan_id UUID NOT NULL REFERENCES research_plans(id) ON DELETE CASCADE,
+      segment_order INT NOT NULL,
+      approved_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (session_id, plan_id, segment_order)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_review_page_approvals_plan_id
+      ON review_page_approvals (plan_id, segment_order);
   `);
 }
 

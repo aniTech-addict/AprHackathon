@@ -8,8 +8,10 @@ import {
   type ClarityData,
 } from "../../repositories/sessionRepository";
 import {
+  approveReviewPage,
   ensureReviewPreview,
   groupParagraphsByPage,
+  getReviewPageProgress,
   type PlanStructureSegment,
 } from "../../repositories/reviewPreviewRepository";
 import { decideClarityNextStep } from "../../services/clarityLoopService";
@@ -25,6 +27,7 @@ import {
 import { defaultClarityQuestions } from "./constants";
 import { normalizeAndValidateSegments } from "./segmentValidation";
 import type {
+  ApproveReviewPageBody,
   ClarityBody,
   PlanResearchBody,
   StartResearchBody,
@@ -443,12 +446,14 @@ export async function reviewPreviewHandler(
       topic: session.topic,
       segments,
     });
+    const progress = await getReviewPageProgress(sessionId, planRow.id);
 
     return res.status(200).json({
       sessionId,
       planId: planRow.id,
       topic: session.topic,
       planStatus: planRow.status,
+      approvedSegmentOrders: progress.approvedSegmentOrders,
       pages: groupParagraphsByPage(session.topic, paragraphs),
       paragraphs,
     });
@@ -457,6 +462,65 @@ export async function reviewPreviewHandler(
     return res.status(500).json({
       message: "Failed to load review preview.",
     });
+  }
+}
+
+export async function approveReviewPageHandler(
+  req: Request,
+  res: Response,
+): Promise<Response> {
+  const sessionId = String(req.params.sessionId || "");
+  const body = req.body as ApproveReviewPageBody;
+  const planId = String(body.planId || "").trim();
+  const segmentOrder = Number(body.segmentOrder || 0);
+
+  if (!planId) {
+    return res.status(400).json({ message: "Plan ID is required." });
+  }
+
+  if (!Number.isInteger(segmentOrder) || segmentOrder < 1) {
+    return res.status(400).json({ message: "Segment order is required." });
+  }
+
+  const session = await getSession(sessionId);
+  if (!session) {
+    return res.status(404).json({ message: "Session not found." });
+  }
+
+  try {
+    const planRow = await getPlanForReview(sessionId, planId);
+    if (!planRow) {
+      return res.status(404).json({ message: "No research plan found for approval." });
+    }
+
+    const segments = normalizePlanSegments(planRow.structure);
+    if (segments.length === 0) {
+      return res.status(404).json({ message: "No plan segments available for approval." });
+    }
+
+    const updatedParagraphs = await approveReviewPage({
+      sessionId,
+      planId: planRow.id,
+      topic: session.topic,
+      segments,
+      segmentOrder,
+    });
+
+    const progress = await getReviewPageProgress(sessionId, planRow.id);
+
+    return res.status(200).json({
+      sessionId,
+      planId: planRow.id,
+      topic: session.topic,
+      planStatus: planRow.status,
+      approvedSegmentOrders: progress.approvedSegmentOrders,
+      pages: groupParagraphsByPage(session.topic, updatedParagraphs),
+      paragraphs: updatedParagraphs,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to approve review page.";
+    console.error("Error approving review page:", error);
+    return res.status(400).json({ message });
   }
 }
 

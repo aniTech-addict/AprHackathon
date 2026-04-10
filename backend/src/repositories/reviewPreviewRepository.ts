@@ -55,6 +55,11 @@ interface ReviewSourceRow {
   excerpt: string;
 }
 
+interface ReviewPageProgress {
+  approvedSegmentOrders: number[];
+  generatedSegmentOrders: number[];
+}
+
 interface SourceSeed {
   title: string;
   url: string;
@@ -439,6 +444,10 @@ function buildReviewSourcesForParagraph(
   }));
 }
 
+function getParagraphOrder(segmentOrder: number, paragraphIndex: number): number {
+  return (segmentOrder - 1) * 3 + paragraphIndex;
+}
+
 export async function getReviewPreviewByPlanId(
   sessionId: string,
   planId: string,
@@ -521,19 +530,65 @@ export function groupParagraphsByPage(
     }));
 }
 
-async function seedReviewPreview(args: EnsureReviewPreviewArgs): Promise<void> {
+export async function getReviewPageProgress(
+  sessionId: string,
+  planId: string,
+): Promise<ReviewPageProgress> {
+  const approvedResult = await pool.query(
+    `
+      SELECT segment_order
+      FROM review_page_approvals
+      WHERE session_id = $1 AND plan_id = $2
+      ORDER BY segment_order ASC
+    `,
+    [sessionId, planId],
+  );
+
+  const generatedResult = await pool.query(
+    `
+      SELECT DISTINCT segment_order
+      FROM review_paragraphs
+      WHERE session_id = $1 AND plan_id = $2
+      ORDER BY segment_order ASC
+    `,
+    [sessionId, planId],
+  );
+
+  return {
+    approvedSegmentOrders: approvedResult.rows.map((row) => Number(row.segment_order)),
+    generatedSegmentOrders: generatedResult.rows.map((row) => Number(row.segment_order)),
+  };
+}
+
+function getNextSegmentToGenerate(
+  segments: PlanStructureSegment[],
+  approvedSegmentOrders: number[],
+  generatedSegmentOrders: number[],
+): PlanStructureSegment | null {
+  const expectedNextOrder = approvedSegmentOrders.length + 1;
+  const nextSegment = segments.find((segment) => segment.order === expectedNextOrder) || null;
+
+  if (!nextSegment) {
+    return null;
+  }
+
+  if (generatedSegmentOrders.includes(nextSegment.order)) {
+    return null;
+  }
+
+  return nextSegment;
+}
+
+async function seedReviewPage(
+  args: EnsureReviewPreviewArgs,
+  segment: PlanStructureSegment,
+): Promise<void> {
   const client = await pool.connect();
 
   try {
     await client.query("BEGIN");
 
-    const discoveredSourcesBySegmentOrder = new Map<number, SourceSeed[]>();
-    for (const segment of args.segments) {
-      const discovered = await discoverTrustedWebSources(args.topic, segment.topic, 3);
-      if (discovered.length > 0) {
-        discoveredSourcesBySegmentOrder.set(segment.order, discovered);
-      }
-    }
+    const discoveredSources = await discoverTrustedWebSources(args.topic, segment.topic, 3);
 
     await client.query(
       `
@@ -553,13 +608,147 @@ async function seedReviewPreview(args: EnsureReviewPreviewArgs): Promise<void> {
       [args.sessionId, args.planId],
     );
 
-    let paragraphOrder = 1;
-    for (const segment of args.segments) {
-      const discoveredSources = discoveredSourcesBySegmentOrder.get(segment.order) || [];
+    for (let paragraphIndex = 1; paragraphIndex <= 3; paragraphIndex += 1) {
+      const paragraphId = randomUUID();
+      const content = buildReviewParagraphContent(args.topic, segment, paragraphIndex);
+
+      await client.query(
+        `
+          INSERT INTO review_paragraphs (id, session_id, plan_id, paragraph_order, segment_order, paragraph_index, segment_title, content)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `,
+        [
+          paragraphId,
+          args.sessionId,
+          args.planId,
+          getParagraphOrder(segment.order, paragraphIndex),
+          segment.order,
+          paragraphIndex,
+          segment.title,
+          content,
+        ],
+      );
+
+      const sources = buildReviewSourcesForParagraph(segment, paragraphIndex, discoveredSources);
+      for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex += 1) {
+        const source = sources[sourceIndex];
+        await client.query(
+          `
+            INSERT INTO review_sources (id, paragraph_id, source_order, title, url, excerpt)
+            VALUES ($1, $2, $3, $4, $5, $6)
+          `,
+          [
+            randomUUID(),
+            paragraphId,
+            sourceIndex + 1,
+            source.title,
+            source.url,
+            source.excerpt,
+          ],
+        );
+      }
+    }
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function seedReviewPreview(args: EnsureReviewPreviewArgs): Promise<void> {
+  const firstSegment = args.segments[0];
+  if (!firstSegment) {
+    return;
+  }
+
+  await seedReviewPage(args, firstSegment);
+}
+
+export async function approveReviewPage(args: {
+  sessionId: string;
+  planId: string;
+  topic: string;
+  segments: PlanStructureSegment[];
+  segmentOrder: number;
+}): Promise<ReviewPreviewParagraph[]> {
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const progress = await getReviewPageProgress(args.sessionId, args.planId);
+    const expectedNextOrder = progress.approvedSegmentOrders.length + 1;
+
+    if (args.segmentOrder !== expectedNextOrder) {
+      throw new Error("The current page must be approved in order before advancing.");
+    }
+
+    const currentSegment = args.segments.find((segment) => segment.order === args.segmentOrder);
+    if (!currentSegment) {
+      throw new Error("Requested page does not exist in the active research plan.");
+    }
+
+    const existingApproval = await client.query(
+      `
+        SELECT id
+        FROM review_page_approvals
+        WHERE session_id = $1 AND plan_id = $2 AND segment_order = $3
+        LIMIT 1
+      `,
+      [args.sessionId, args.planId, args.segmentOrder],
+    );
+
+    if (existingApproval.rows.length === 0) {
+      await client.query(
+        `
+          INSERT INTO review_page_approvals (id, session_id, plan_id, segment_order)
+          VALUES ($1, $2, $3, $4)
+        `,
+        [randomUUID(), args.sessionId, args.planId, args.segmentOrder],
+      );
+    }
+
+    const nextSegment = getNextSegmentToGenerate(
+      args.segments,
+      [...progress.approvedSegmentOrders, args.segmentOrder].sort((a, b) => a - b),
+      progress.generatedSegmentOrders,
+    );
+
+    if (nextSegment) {
+      const discoveredSources = await discoverTrustedWebSources(args.topic, nextSegment.topic, 3);
+
+      const paragraphIdsToDelete = await client.query(
+        `
+          SELECT id
+          FROM review_paragraphs
+          WHERE session_id = $1 AND plan_id = $2 AND segment_order = $3
+        `,
+        [args.sessionId, args.planId, nextSegment.order],
+      );
+
+      if (paragraphIdsToDelete.rows.length > 0) {
+        await client.query(
+          `
+            DELETE FROM review_sources
+            WHERE paragraph_id = ANY($1::uuid[])
+          `,
+          [paragraphIdsToDelete.rows.map((row) => row.id)],
+        );
+        await client.query(
+          `
+            DELETE FROM review_paragraphs
+            WHERE session_id = $1 AND plan_id = $2 AND segment_order = $3
+          `,
+          [args.sessionId, args.planId, nextSegment.order],
+        );
+      }
 
       for (let paragraphIndex = 1; paragraphIndex <= 3; paragraphIndex += 1) {
         const paragraphId = randomUUID();
-        const content = buildReviewParagraphContent(args.topic, segment, paragraphIndex);
+        const content = buildReviewParagraphContent(args.topic, nextSegment, paragraphIndex);
 
         await client.query(
           `
@@ -570,19 +759,15 @@ async function seedReviewPreview(args: EnsureReviewPreviewArgs): Promise<void> {
             paragraphId,
             args.sessionId,
             args.planId,
-            paragraphOrder,
-            segment.order,
+            getParagraphOrder(nextSegment.order, paragraphIndex),
+            nextSegment.order,
             paragraphIndex,
-            segment.title,
+            nextSegment.title,
             content,
           ],
         );
 
-        const sources = buildReviewSourcesForParagraph(
-          segment,
-          paragraphIndex,
-          discoveredSources,
-        );
+        const sources = buildReviewSourcesForParagraph(nextSegment, paragraphIndex, discoveredSources);
         for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex += 1) {
           const source = sources[sourceIndex];
           await client.query(
@@ -600,8 +785,6 @@ async function seedReviewPreview(args: EnsureReviewPreviewArgs): Promise<void> {
             ],
           );
         }
-
-        paragraphOrder += 1;
       }
     }
 
@@ -612,6 +795,8 @@ async function seedReviewPreview(args: EnsureReviewPreviewArgs): Promise<void> {
   } finally {
     client.release();
   }
+
+  return getReviewPreviewByPlanId(args.sessionId, args.planId);
 }
 
 export async function ensureReviewPreview(
