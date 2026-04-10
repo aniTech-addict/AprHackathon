@@ -111,6 +111,7 @@ async function insertSegmentParagraphsAndSources(
       previousParagraphs,
       discoveredSources,
       args.researchFocusContext,
+      args.relevanceThreshold,
     );
     const paragraphId = randomUUID();
     const sources = buildReviewSourcesForParagraph(segment, paragraphIndex, discoveredSources);
@@ -174,6 +175,7 @@ async function insertSegmentParagraphsAndSources(
     paragraphs: generatedParagraphs,
     sources: discoveredSources,
     researchFocusContext: args.researchFocusContext,
+    relevanceThreshold: args.relevanceThreshold,
   });
 
   for (let paragraphIndex = 1; paragraphIndex <= harmonizedParagraphs.length; paragraphIndex += 1) {
@@ -518,6 +520,7 @@ export async function approveReviewPage(args: {
   planId: string;
   topic: string;
   researchFocusContext?: string;
+  relevanceThreshold?: number;
   segments: PlanStructureSegment[];
   segmentOrder: number;
 }): Promise<ReviewPreviewParagraph[]> {
@@ -526,6 +529,7 @@ export async function approveReviewPage(args: {
     planId: args.planId,
     topic: args.topic,
     researchFocusContext: args.researchFocusContext,
+    relevanceThreshold: args.relevanceThreshold,
     segments: args.segments,
   };
 

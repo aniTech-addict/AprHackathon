@@ -41,6 +41,7 @@ export interface EnsureReviewPreviewArgs {
   planId: string;
   topic: string;
   researchFocusContext?: string;
+  relevanceThreshold?: number;
   segments: PlanStructureSegment[];
 }
 

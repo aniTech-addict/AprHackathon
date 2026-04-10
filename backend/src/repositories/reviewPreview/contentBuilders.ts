@@ -7,6 +7,8 @@ import type {
 import { normalizeTrustedUrl } from "./sourceDiscovery";
 import { streamJsonChatCompletion } from "../../services/openRouterClient";
 
+const MIN_RELEVANCE_SCORE = 0.78;
+
 function buildTemplateParagraph(
   topic: string,
   segment: PlanStructureSegment,
@@ -57,6 +59,204 @@ function parseHarmonizedParagraphs(jsonText: string): string[] | null {
   } catch {
     return null;
   }
+}
+
+function parseRelevanceScore(jsonText: string): number | null {
+  try {
+    const parsed = JSON.parse(jsonText) as { score?: unknown };
+    const numeric = Number(parsed.score);
+    if (!Number.isFinite(numeric)) {
+      return null;
+    }
+
+    return Math.max(0, Math.min(1, numeric));
+  } catch {
+    return null;
+  }
+}
+
+async function scoreParagraphRelevance(args: {
+  topic: string;
+  segment: PlanStructureSegment;
+  paragraphIndex: number;
+  paragraph: string;
+  researchFocusContext: string;
+}): Promise<number | null> {
+  const contextPrompt = args.researchFocusContext.trim()
+    ? `Research focus context from phases 1-3:\n${args.researchFocusContext.trim()}\n\n`
+    : "";
+
+  const prompt = `Topic: ${args.topic}
+Section title: ${args.segment.title}
+Section topic: ${args.segment.topic}
+Paragraph position: ${args.paragraphIndex} of 3
+
+${contextPrompt}Paragraph to evaluate:
+${args.paragraph}
+
+Score relevance from 0.0 to 1.0 where:
+- 1.0 = directly focused on this section and user goal
+- 0.5 = partially relevant but contains noticeable drift
+- 0.0 = mostly off-topic for this section
+
+Return strict JSON with only: {"score": number}`;
+
+  const result = await streamJsonChatCompletion({
+    operation: "segment-relevance-score",
+    model: process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini",
+    temperature: 0,
+    messages: [
+      {
+        role: "system",
+        content: "You evaluate topical relevance for research writing quality control. Return strict JSON only.",
+      },
+      {
+        role: "user",
+        content: prompt,
+      },
+    ],
+    responseFormat: {
+      type: "json_schema",
+      jsonSchema: {
+        name: "paragraph_relevance_score",
+        strict: true,
+        schema: {
+          type: "object",
+          properties: {
+            score: { type: "number" },
+          },
+          required: ["score"],
+          additionalProperties: false,
+        },
+      },
+    },
+  });
+
+  if (!result) {
+    return null;
+  }
+
+  return parseRelevanceScore(result.content);
+}
+
+async function rewriteParagraphForFocus(args: {
+  topic: string;
+  segment: PlanStructureSegment;
+  paragraphIndex: number;
+  paragraph: string;
+  previousParagraphs: string[];
+  sources: SourceSeed[];
+  researchFocusContext: string;
+}): Promise<string | null> {
+  const contextPrompt = args.previousParagraphs.length > 0
+    ? `Previous paragraphs in this section:\n${args.previousParagraphs.map((p, i) => `${i + 1}. ${p}`).join("\n\n")}\n\n`
+    : "";
+
+  const focusContextPrompt = args.researchFocusContext.trim()
+    ? `Research focus context from phases 1-3:\n${args.researchFocusContext.trim()}\n\n`
+    : "";
+
+  const sourceContext = args.sources.map((s, i) => `${i + 1}. ${s.title}: ${s.excerpt}`).join("\n");
+
+  const prompt = `Topic: ${args.topic}
+Section: ${args.segment.title}
+Section topic: ${args.segment.topic}
+Paragraph position: ${args.paragraphIndex} of 3
+
+${focusContextPrompt}${contextPrompt}Current paragraph draft:
+${args.paragraph}
+
+Task:
+Rewrite this paragraph so it is tightly focused on the section question and user goal.
+
+Requirements:
+- Keep factual meaning and source-grounded claims.
+- Remove drifted/off-topic content.
+- Keep the paragraph as one cohesive block.
+- Preserve narrative flow with previous section context if provided.
+
+Sources:
+${sourceContext || "No sources provided."}
+
+Return strict JSON with only: {"paragraph": string}`;
+
+  const result = await streamJsonChatCompletion({
+    operation: "segment-focus-rewrite",
+    model: process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini",
+    temperature: 0.1,
+    messages: [
+      {
+        role: "system",
+        content: "You are a strict research editor focused on section-level topical alignment. Return strict JSON only.",
+      },
+      {
+        role: "user",
+        content: prompt,
+      },
+    ],
+    responseFormat: {
+      type: "json_schema",
+      jsonSchema: {
+        name: "focused_paragraph_rewrite",
+        strict: true,
+        schema: {
+          type: "object",
+          properties: {
+            paragraph: { type: "string" },
+          },
+          required: ["paragraph"],
+          additionalProperties: false,
+        },
+      },
+    },
+  });
+
+  if (!result) {
+    return null;
+  }
+
+  return parseGeneratedParagraph(result.content);
+}
+
+async function enforceParagraphFocus(args: {
+  topic: string;
+  segment: PlanStructureSegment;
+  paragraphIndex: number;
+  paragraph: string;
+  previousParagraphs: string[];
+  sources: SourceSeed[];
+  researchFocusContext: string;
+}): Promise<string | null> {
+  const initialScore = await scoreParagraphRelevance({
+    topic: args.topic,
+    segment: args.segment,
+    paragraphIndex: args.paragraphIndex,
+    paragraph: args.paragraph,
+    researchFocusContext: args.researchFocusContext,
+  });
+
+  if (initialScore !== null && initialScore >= MIN_RELEVANCE_SCORE) {
+    return args.paragraph;
+  }
+
+  const rewritten = await rewriteParagraphForFocus(args);
+  if (!rewritten) {
+    return null;
+  }
+
+  const rewrittenScore = await scoreParagraphRelevance({
+    topic: args.topic,
+    segment: args.segment,
+    paragraphIndex: args.paragraphIndex,
+    paragraph: rewritten,
+    researchFocusContext: args.researchFocusContext,
+  });
+
+  if (rewrittenScore !== null && rewrittenScore >= MIN_RELEVANCE_SCORE) {
+    return rewritten;
+  }
+
+  return null;
 }
 
 export function hasStrictValidSources(paragraphs: ReviewPreviewParagraph[]): boolean {
@@ -147,7 +347,21 @@ export async function buildReviewParagraphContent(
     return buildTemplateParagraph(topic, segment, paragraphIndex, previousParagraphs);
   }
 
-  return generated;
+  const focused = await enforceParagraphFocus({
+    topic,
+    segment,
+    paragraphIndex,
+    paragraph: generated,
+    previousParagraphs,
+    sources,
+    researchFocusContext,
+  });
+
+  if (!focused) {
+    return buildTemplateParagraph(topic, segment, paragraphIndex, previousParagraphs);
+  }
+
+  return focused;
 }
 
 export async function harmonizeSegmentParagraphs(args: {
@@ -237,7 +451,31 @@ Return strict JSON with key "paragraphs" as an array of 3 strings.`;
   }
 
   const harmonized = parseHarmonizedParagraphs(result.content);
-  return harmonized || args.paragraphs;
+  if (!harmonized) {
+    return args.paragraphs;
+  }
+
+  const focusedParagraphs: string[] = [];
+  for (let index = 0; index < harmonized.length; index += 1) {
+    const paragraph = harmonized[index];
+    const focused = await enforceParagraphFocus({
+      topic: args.topic,
+      segment: args.segment,
+      paragraphIndex: index + 1,
+      paragraph,
+      previousParagraphs: focusedParagraphs,
+      sources: args.sources,
+      researchFocusContext: args.researchFocusContext || "",
+    });
+
+    if (!focused) {
+      return args.paragraphs;
+    }
+
+    focusedParagraphs.push(focused);
+  }
+
+  return focusedParagraphs;
 }
 
 export function buildReviewSourcesForParagraph(
