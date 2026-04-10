@@ -13,6 +13,7 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
   const [isLoading, setIsLoading] = useState(true)
   const [isExporting, setIsExporting] = useState(false)
   const [isApproving, setIsApproving] = useState(false)
+  const [busyParagraphId, setBusyParagraphId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [exportNotice, setExportNotice] = useState<string | null>(null)
   const [reviewData, setReviewData] = useState<ReviewPreviewResponse | null>(null)
@@ -43,6 +44,54 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
     setApprovedSegmentOrders(payload.approvedSegmentOrders || [])
   }
 
+  function syncSelectionAfterPayload(payload: ReviewPreviewResponse) {
+    const nextPageIndex = Math.min(activePageIndex, Math.max(payload.pages.length - 1, 0))
+    setActivePageIndex(nextPageIndex)
+
+    const keepCurrent =
+      (activeParagraphId && payload.paragraphs.find((paragraph) => paragraph.id === activeParagraphId)) || null
+    const fallbackParagraph = payload.pages[nextPageIndex]?.paragraphs?.[0] || payload.paragraphs[0] || null
+    const nextActiveParagraph = keepCurrent || fallbackParagraph
+
+    setActiveParagraphId(nextActiveParagraph?.id || null)
+    setActiveSourceId(nextActiveParagraph?.sources?.[0]?.id || null)
+  }
+
+  async function runParagraphMutation(
+    paragraphId: string,
+    init: RequestInit,
+    actionPathSuffix = '',
+  ) {
+    if (!reviewData) {
+      return
+    }
+
+    setBusyParagraphId(paragraphId)
+    setError(null)
+
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/api/research/${sessionId}/review-preview/paragraphs/${paragraphId}${actionPathSuffix}`,
+        init,
+      )
+
+      if (!response.ok) {
+        const payload = (await response.json()) as { message?: string }
+        throw new Error(payload.message || 'Failed to update paragraph.')
+      }
+
+      const payload = (await response.json()) as ReviewPreviewResponse
+      applyReviewPayload(payload)
+      syncSelectionAfterPayload(payload)
+    } catch (mutationError) {
+      const errorMessage = mutationError instanceof Error ? mutationError.message : 'Failed to update paragraph.'
+      setError(errorMessage)
+      onError(errorMessage)
+    } finally {
+      setBusyParagraphId(null)
+    }
+  }
+
   const liveParagraphs = useMemo<ReviewParagraph[]>(() => {
     if (!editingParagraphId) {
       return documentParagraphs
@@ -58,24 +107,78 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
     )
   }, [documentParagraphs, editingParagraphId, editingDraft])
 
-  function saveEditing(paragraphId: string) {
+  async function saveEditing(paragraphId: string) {
     const nextContent = editingDraft.trim()
     if (!nextContent) {
       return
     }
 
-    setDocumentParagraphs((prev) =>
-      prev.map((paragraph) =>
-        paragraph.id === paragraphId
-          ? {
-              ...paragraph,
-              content: nextContent,
-            }
-          : paragraph,
-      ),
-    )
+    if (!reviewData) {
+      return
+    }
+
+    await runParagraphMutation(paragraphId, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        planId: reviewData.planId,
+        mode: 'manual',
+        content: nextContent,
+      }),
+    })
 
     cancelEditing()
+  }
+
+  async function refineWithAi(paragraphId: string) {
+    if (!reviewData) {
+      return
+    }
+
+    await runParagraphMutation(paragraphId, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        planId: reviewData.planId,
+        mode: 'ai',
+      }),
+    })
+  }
+
+  async function approveParagraph(paragraphId: string) {
+    if (!reviewData) {
+      return
+    }
+
+    await runParagraphMutation(paragraphId, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        planId: reviewData.planId,
+      }),
+    }, '/approve')
+  }
+
+  async function deleteParagraph(paragraphId: string) {
+    if (!reviewData) {
+      return
+    }
+
+    await runParagraphMutation(paragraphId, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        planId: reviewData.planId,
+      }),
+    })
   }
 
   async function handleExport() {
