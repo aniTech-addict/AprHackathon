@@ -27,6 +27,7 @@ import {
   refineParagraphWithAi,
   stabilizeParagraphFlow,
 } from "../../services/reviewRefinementService";
+import { normalizeTrustedUrl } from "../../repositories/reviewPreview/sourceDiscovery";
 import { decideClarityNextStep } from "../../services/clarityLoopService";
 import { classifyInput } from "../../services/inputClassifier";
 import {
@@ -53,6 +54,99 @@ interface ReviewPlanRecord {
   id: string;
   structure: unknown;
   status: string;
+}
+
+function stripHtmlToText(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractTitle(html: string): string {
+  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  return titleMatch?.[1]?.replace(/\s+/g, " ").trim() || "Untitled page";
+}
+
+function buildPreviewExcerpt(text: string, maxLength = 2200): string {
+  if (!text) {
+    return "";
+  }
+
+  if (text.length <= maxLength) {
+    return text;
+  }
+
+  return `${text.slice(0, maxLength).trim()}...`;
+}
+
+function looksLikeBlockedOrRedirectPage(text: string, title: string): boolean {
+  const combined = `${title} ${text}`.toLowerCase();
+
+  const markers = [
+    "redirecting",
+    "just a moment",
+    "checking your browser",
+    "enable javascript",
+    "access denied",
+    "forbidden",
+    "captcha",
+    "sign in",
+    "log in",
+    "cookie policy",
+  ];
+
+  return markers.some((marker) => combined.includes(marker));
+}
+
+async function fetchReaderFallback(url: string): Promise<{ title: string; excerpt: string } | null> {
+  const readerUrl = `https://r.jina.ai/http://${url.replace(/^https?:\/\//, "")}`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+
+  try {
+    const response = await fetch(readerUrl, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; WebResearcherAgent/1.0)",
+        Accept: "text/plain",
+      },
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const rawText = (await response.text()).trim();
+    if (rawText.length < 120) {
+      return null;
+    }
+
+    const lines = rawText
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+
+    const title = lines[0]?.replace(/^#+\s*/, "") || "Webpage preview";
+    const excerpt = buildPreviewExcerpt(rawText);
+
+    if (!excerpt || looksLikeBlockedOrRedirectPage(excerpt, title)) {
+      return null;
+    }
+
+    return { title, excerpt };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function getPlanForReview(
@@ -887,6 +981,83 @@ export async function reviewExportHandler(
     return res.status(500).json({
       message: "Failed to export review data.",
     });
+  }
+}
+
+export async function sourcePreviewHandler(
+  req: Request,
+  res: Response,
+): Promise<Response> {
+  const sessionId = String(req.params.sessionId || "");
+  const rawUrl = String(req.query.url || "").trim();
+
+  if (!rawUrl) {
+    return res.status(400).json({ message: "Source URL is required." });
+  }
+
+  const session = await getSession(sessionId);
+  if (!session) {
+    return res.status(404).json({ message: "Session not found." });
+  }
+
+  const normalized = normalizeTrustedUrl(rawUrl);
+  if (!normalized) {
+    return res.status(400).json({ message: "Source URL is not allowed." });
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+
+    let title = "";
+    let excerpt = "";
+
+    try {
+      const response = await fetch(normalized, {
+        signal: controller.signal,
+        redirect: "follow",
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; WebResearcherAgent/1.0)",
+          Accept: "text/html,application/xhtml+xml",
+        },
+      });
+
+      if (response.ok) {
+        const contentType = (response.headers.get("content-type") || "").toLowerCase();
+        if (contentType.includes("text/html") || contentType.includes("application/xhtml+xml")) {
+          const html = await response.text();
+          title = extractTitle(html);
+          const text = stripHtmlToText(html);
+          excerpt = buildPreviewExcerpt(text);
+        }
+      }
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    if (!excerpt || excerpt.length < 180 || looksLikeBlockedOrRedirectPage(excerpt, title)) {
+      const fallback = await fetchReaderFallback(normalized);
+      if (fallback) {
+        title = fallback.title;
+        excerpt = fallback.excerpt;
+      }
+    }
+
+    if (!excerpt) {
+      return res.status(502).json({
+        message:
+          "Could not load a stable preview for this source. Open it in a full tab for direct access.",
+      });
+    }
+
+    return res.status(200).json({
+      url: normalized,
+      title: title || "Webpage preview",
+      excerpt,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to preview source.";
+    return res.status(502).json({ message });
   }
 }
 

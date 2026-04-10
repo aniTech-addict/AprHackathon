@@ -8,6 +8,7 @@ import {
   planResearchHandler,
   reviewExportHandler,
   reviewPreviewHandler,
+  sourcePreviewHandler,
   startResearchHandler,
   submitClarityHandler,
   updatePlanHandler,
@@ -33,5 +34,6 @@ router.post("/:sessionId/review-preview/paragraphs/:paragraphId/approve", approv
 router.delete("/:sessionId/review-preview/paragraphs/:paragraphId", deleteReviewParagraphHandler);
 router.post("/:sessionId/review-preview/approve", approveReviewPageHandler);
 router.get("/:sessionId/review-export", reviewExportHandler);
+router.get("/:sessionId/source-preview", sourcePreviewHandler);
 
 export { router as researchRouter };
