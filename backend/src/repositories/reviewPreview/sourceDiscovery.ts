@@ -76,6 +76,97 @@ const BLOCKED_RESOURCE_EXTENSIONS = new Set([
   ".xml",
 ]);
 
+const BLOCKED_BOOK_HOSTS = new Set([
+  "books.google.com",
+  "books.google.co.uk",
+  "books.google.co.in",
+  "www.goodreads.com",
+  "goodreads.com",
+  "openlibrary.org",
+  "www.openlibrary.org",
+  "bookshop.org",
+  "www.bookshop.org",
+  "books.apple.com",
+  "www.amazon.com",
+  "amazon.com",
+  "www.barnesandnoble.com",
+  "barnesandnoble.com",
+  "www.audible.com",
+  "audible.com",
+]);
+
+const BLOCKED_REVIEW_HOSTS = new Set([
+  "www.kirkusreviews.com",
+  "kirkusreviews.com",
+  "www.bookbrowse.com",
+  "bookbrowse.com",
+  "www.nybooks.com",
+  "nybooks.com",
+  "www.literaryhub.com",
+  "lithub.com",
+]);
+
+const BLOCKED_BOOK_PATH_HINTS = [
+  "/book/",
+  "/books/",
+  "/ebook/",
+  "/isbn/",
+  "/textbook/",
+  "/hardcover/",
+  "/paperback/",
+];
+
+const BLOCKED_BOOK_QUERY_KEYS = [
+  "isbn",
+  "book",
+  "books",
+  "edition",
+  "volume",
+];
+
+const BLOCKED_REVIEW_PATH_HINTS = [
+  "/book-review",
+  "/book-reviews",
+  "/reviews/books",
+  "/books/reviews",
+  "/reviews/book",
+  "/review/book",
+];
+
+const BLOCKED_REVIEW_QUERY_KEYS = ["review", "rating", "ratings"];
+
+const BOOK_HINT_PATTERN =
+  /\b(book|books|textbook|handbook|monograph|isbn|hardcover|paperback|ebook|kindle|chapter in|book chapter|2nd edition|3rd edition|fourth edition|fifth edition)\b/i;
+
+const REVIEW_HINT_PATTERN =
+  /\b(book review|book reviews|editorial review|customer review|critic review|reviews and ratings|rated [1-5](?:\/5)? stars?)\b/i;
+
+const BLOCKED_OPENALEX_TYPES = new Set([
+  "book",
+  "book-series",
+  "book-part",
+  "book-section",
+  "book-chapter",
+  "book-set",
+  "monograph",
+  "reference-book",
+  "edited-book",
+]);
+
+const BLOCKED_CROSSREF_TYPES = new Set([
+  "book",
+  "book-set",
+  "book-series",
+  "book-track",
+  "book-part",
+  "book-section",
+  "book-chapter",
+  "edited-book",
+  "reference-book",
+  "monograph",
+  "peer-review",
+]);
+
 function hasBlockedResourceExtension(pathname: string): boolean {
   const normalizedPath = pathname.toLowerCase();
   for (const extension of BLOCKED_RESOURCE_EXTENSIONS) {
@@ -116,6 +207,88 @@ function isSearchResultUrl(parsed: URL): boolean {
   }
 
   return searchParam.has("q") || searchParam.has("query") || searchParam.has("search");
+}
+
+function hasBookLikeUrl(parsed: URL): boolean {
+  const hostname = parsed.hostname.toLowerCase();
+  if (BLOCKED_BOOK_HOSTS.has(hostname)) {
+    return true;
+  }
+
+  const pathname = parsed.pathname.toLowerCase();
+  if (BLOCKED_BOOK_PATH_HINTS.some((hint) => pathname.includes(hint))) {
+    return true;
+  }
+
+  for (const key of BLOCKED_BOOK_QUERY_KEYS) {
+    if (parsed.searchParams.has(key)) {
+      return true;
+    }
+
+    const value = (parsed.searchParams.get(key) || "").toLowerCase();
+    if (value && BOOK_HINT_PATTERN.test(value)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function hasReviewLikeUrl(parsed: URL): boolean {
+  const hostname = parsed.hostname.toLowerCase();
+  if (BLOCKED_REVIEW_HOSTS.has(hostname)) {
+    return true;
+  }
+
+  const pathname = parsed.pathname.toLowerCase();
+  if (BLOCKED_REVIEW_PATH_HINTS.some((hint) => pathname.includes(hint))) {
+    return true;
+  }
+
+  for (const key of BLOCKED_REVIEW_QUERY_KEYS) {
+    if (parsed.searchParams.has(key)) {
+      const value = (parsed.searchParams.get(key) || "").toLowerCase();
+      if (!value || REVIEW_HINT_PATTERN.test(value)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function isBookLikeText(text: string): boolean {
+  return BOOK_HINT_PATTERN.test(text);
+}
+
+function isReviewLikeText(text: string): boolean {
+  return REVIEW_HINT_PATTERN.test(text);
+}
+
+function isBookLikeCandidate(candidate: CandidateSource): boolean {
+  if (isBookLikeText(candidate.title) || isBookLikeText(candidate.excerpt)) {
+    return true;
+  }
+
+  try {
+    const parsed = new URL(candidate.url);
+    return hasBookLikeUrl(parsed);
+  } catch {
+    return false;
+  }
+}
+
+function isReviewLikeCandidate(candidate: CandidateSource): boolean {
+  if (isReviewLikeText(candidate.title) || isReviewLikeText(candidate.excerpt)) {
+    return true;
+  }
+
+  try {
+    const parsed = new URL(candidate.url);
+    return hasReviewLikeUrl(parsed);
+  } catch {
+    return false;
+  }
 }
 
 export function normalizeTrustedUrl(rawUrl: string): string | null {
@@ -159,6 +332,14 @@ export function normalizeTrustedUrl(rawUrl: string): string | null {
     return null;
   }
 
+  if (hasBookLikeUrl(parsed)) {
+    return null;
+  }
+
+  if (hasReviewLikeUrl(parsed)) {
+    return null;
+  }
+
   if (!isTrustedHost(parsed.hostname)) {
     return null;
   }
@@ -175,11 +356,21 @@ function dedupeSources(candidates: CandidateSource[]): CandidateSource[] {
       continue;
     }
 
+    const normalizedCandidate: CandidateSource = {
+      ...candidate,
+      url: normalized,
+    };
+
+    if (isBookLikeCandidate(normalizedCandidate)) {
+      continue;
+    }
+
+    if (isReviewLikeCandidate(normalizedCandidate)) {
+      continue;
+    }
+
     if (!byUrl.has(normalized)) {
-      byUrl.set(normalized, {
-        ...candidate,
-        url: normalized,
-      });
+      byUrl.set(normalized, normalizedCandidate);
     }
   }
 
@@ -260,6 +451,7 @@ async function fetchOpenAlexCandidates(query: string): Promise<CandidateSource[]
       results?: Array<{
         display_name?: string;
         doi?: string;
+        type?: string;
         primary_location?: {
           landing_page_url?: string;
           source?: {
@@ -272,6 +464,10 @@ async function fetchOpenAlexCandidates(query: string): Promise<CandidateSource[]
     const results = Array.isArray(payload.results) ? payload.results : [];
     return results
       .map((item) => {
+        if (item.type && BLOCKED_OPENALEX_TYPES.has(item.type.toLowerCase())) {
+          return null;
+        }
+
         const landing = item.primary_location?.landing_page_url;
         const doi = item.doi || "";
         const doiUrl = doi.startsWith("http")
@@ -318,6 +514,7 @@ async function fetchCrossrefCandidates(query: string): Promise<CandidateSource[]
           title?: string[];
           URL?: string;
           "container-title"?: string[];
+          type?: string;
         }>;
       };
     };
@@ -325,6 +522,10 @@ async function fetchCrossrefCandidates(query: string): Promise<CandidateSource[]
     const items = payload.message?.items ?? [];
     return items
       .map((item) => {
+        if (item.type && BLOCKED_CROSSREF_TYPES.has(item.type.toLowerCase())) {
+          return null;
+        }
+
         if (!item.URL) {
           return null;
         }
