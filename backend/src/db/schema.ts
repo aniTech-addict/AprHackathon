@@ -61,6 +61,12 @@ export async function ensureCoreSchema(): Promise<void> {
       UNIQUE (plan_id, paragraph_order)
     );
 
+    ALTER TABLE review_paragraphs
+      ADD COLUMN IF NOT EXISTS segment_order INT NOT NULL DEFAULT 1;
+
+    ALTER TABLE review_paragraphs
+      ADD COLUMN IF NOT EXISTS paragraph_index INT NOT NULL DEFAULT 1;
+
     CREATE INDEX IF NOT EXISTS idx_review_paragraphs_session_id ON review_paragraphs (session_id);
     CREATE INDEX IF NOT EXISTS idx_review_paragraphs_plan_id ON review_paragraphs (plan_id);
 

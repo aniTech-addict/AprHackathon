@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   approvePlanHandler,
   planResearchHandler,
+  reviewExportHandler,
   reviewPreviewHandler,
   startResearchHandler,
   submitClarityHandler,
@@ -19,5 +20,6 @@ router.post("/:sessionId/plan-research", planResearchHandler);
 router.patch("/:sessionId/plans/:planId", updatePlanHandler);
 router.post("/:sessionId/plans/:planId/approve", approvePlanHandler);
 router.get("/:sessionId/review-preview", reviewPreviewHandler);
+router.get("/:sessionId/review-export", reviewExportHandler);
 
 export { router as researchRouter };

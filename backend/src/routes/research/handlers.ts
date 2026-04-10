@@ -9,6 +9,7 @@ import {
 } from "../../repositories/sessionRepository";
 import {
   ensureReviewPreview,
+  groupParagraphsByPage,
   type PlanStructureSegment,
 } from "../../repositories/reviewPreviewRepository";
 import { decideClarityNextStep } from "../../services/clarityLoopService";
@@ -29,6 +30,44 @@ import type {
   StartResearchBody,
   UpdatePlanBody,
 } from "./types";
+
+interface ReviewPlanRecord {
+  id: string;
+  structure: unknown;
+  status: string;
+}
+
+async function getPlanForReview(
+  sessionId: string,
+  requestedPlanId: string,
+): Promise<ReviewPlanRecord | null> {
+  const result = requestedPlanId
+    ? await pool.query(
+        `
+        SELECT id, structure, status
+        FROM research_plans
+        WHERE session_id = $1 AND id = $2
+        LIMIT 1
+      `,
+        [sessionId, requestedPlanId],
+      )
+    : await pool.query(
+        `
+        SELECT id, structure, status
+        FROM research_plans
+        WHERE session_id = $1
+        ORDER BY CASE WHEN status = 'approved' THEN 0 ELSE 1 END, updated_at DESC
+        LIMIT 1
+      `,
+        [sessionId],
+      );
+
+  if (result.rows.length === 0) {
+    return null;
+  }
+
+  return result.rows[0] as ReviewPlanRecord;
+}
 
 function normalizePlanSegments(structure: unknown): PlanStructureSegment[] {
   if (!Array.isArray(structure)) {
@@ -384,38 +423,12 @@ export async function reviewPreviewHandler(
   }
 
   try {
-    const planResult = requestedPlanId
-      ? await pool.query(
-          `
-          SELECT id, structure, status
-          FROM research_plans
-          WHERE session_id = $1 AND id = $2
-          LIMIT 1
-        `,
-          [sessionId, requestedPlanId],
-        )
-      : await pool.query(
-          `
-          SELECT id, structure, status
-          FROM research_plans
-          WHERE session_id = $1
-          ORDER BY CASE WHEN status = 'approved' THEN 0 ELSE 1 END, updated_at DESC
-          LIMIT 1
-        `,
-          [sessionId],
-        );
-
-    if (planResult.rows.length === 0) {
+    const planRow = await getPlanForReview(sessionId, requestedPlanId);
+    if (!planRow) {
       return res.status(404).json({
         message: "No research plan found for review preview.",
       });
     }
-
-    const planRow = planResult.rows[0] as {
-      id: string;
-      structure: unknown;
-      status: string;
-    };
 
     const segments = normalizePlanSegments(planRow.structure);
     if (segments.length === 0) {
@@ -436,12 +449,99 @@ export async function reviewPreviewHandler(
       planId: planRow.id,
       topic: session.topic,
       planStatus: planRow.status,
+      pages: groupParagraphsByPage(session.topic, paragraphs),
       paragraphs,
     });
   } catch (error) {
     console.error("Error generating review preview:", error);
     return res.status(500).json({
       message: "Failed to load review preview.",
+    });
+  }
+}
+
+export async function reviewExportHandler(
+  req: Request,
+  res: Response,
+): Promise<Response> {
+  const sessionId = String(req.params.sessionId || "");
+  const requestedPlanId = String(req.query.planId || "").trim();
+
+  const session = await getSession(sessionId);
+  if (!session) {
+    return res.status(404).json({ message: "Session not found." });
+  }
+
+  try {
+    const planRow = await getPlanForReview(sessionId, requestedPlanId);
+    if (!planRow) {
+      return res.status(404).json({
+        message: "No research plan found for review export.",
+      });
+    }
+
+    const segments = normalizePlanSegments(planRow.structure);
+    if (segments.length === 0) {
+      return res.status(404).json({
+        message: "No plan segments available for review export.",
+      });
+    }
+
+    const paragraphs = await ensureReviewPreview({
+      sessionId,
+      planId: planRow.id,
+      topic: session.topic,
+      segments,
+    });
+
+    const sourceRows = paragraphs.flatMap((paragraph) =>
+      paragraph.sources.map((source) => ({
+        ...source,
+        paragraphId: paragraph.id,
+        paragraphOrder: paragraph.order,
+      })),
+    );
+
+    return res.status(200).json({
+      sessionId,
+      planId: planRow.id,
+      topic: session.topic,
+      planStatus: planRow.status,
+      exportedAt: new Date().toISOString(),
+      pageCount: groupParagraphsByPage(session.topic, paragraphs).length,
+      paragraphCount: paragraphs.length,
+      sourceCount: sourceRows.length,
+      pages: groupParagraphsByPage(session.topic, paragraphs).map((page) => ({
+        segmentOrder: page.segmentOrder,
+        segmentTitle: page.segmentTitle,
+        topic: page.topic,
+        paragraphs: page.paragraphs.map((paragraph) => ({
+          id: paragraph.id,
+          order: paragraph.order,
+          paragraphIndex: paragraph.paragraphIndex,
+          content: paragraph.content,
+        })),
+      })),
+      paragraphs: paragraphs.map((paragraph) => ({
+        id: paragraph.id,
+        order: paragraph.order,
+        segmentOrder: paragraph.segmentOrder,
+        paragraphIndex: paragraph.paragraphIndex,
+        segmentTitle: paragraph.segmentTitle,
+        content: paragraph.content,
+        citations: paragraph.sources.map((source) => ({
+          sourceId: source.id,
+          title: source.title,
+          url: source.url,
+          excerpt: source.excerpt,
+        })),
+      })),
+      sources: sourceRows,
+    });
+  } catch (error) {
+    console.error("Error exporting review data:", error);
+    return res.status(500).json({
+      message: "Failed to export review data.",
     });
   }
 }
