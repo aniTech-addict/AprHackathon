@@ -21,7 +21,7 @@ export function ClarityPage({
 }: ClarityPageProps) {
   const [userBackground, setUserBackground] = useState<'researcher' | 'student' | 'teacher'>('student')
   const [researchGoal, setResearchGoal] = useState('')
-  const [sourcePreferences, setSourcePreferences] = useState<string[]>(['reputable_only'])
+  const [sourcePreferences, setSourcePreferences] = useState<string[]>(['articles_news', 'reputable_only'])
   const [followUpQuestions, setFollowUpQuestions] = useState<string[]>(initialFollowUpQuestions)
   const [followUpAnswers, setFollowUpAnswers] = useState<string[]>(initialFollowUpQuestions.map(() => ''))
   const [clarityRound, setClarityRound] = useState(initialClarityRound || 1)

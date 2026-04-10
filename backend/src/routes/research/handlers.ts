@@ -371,7 +371,7 @@ async function buildResearchFocusContext(
 
   const sourcePreferences = Array.isArray(row.source_preferences)
     ? row.source_preferences.map((value) => String(value)).join(", ")
-    : "reputable_only";
+    : "articles_news, reputable_only";
 
   return [
     `Primary topic: ${topic}`,
@@ -540,7 +540,7 @@ export async function submitClarityHandler(
   const sourcePreferences = (
     Array.isArray(body.sourcePreferences)
       ? body.sourcePreferences
-      : ["reputable_only"]
+      : ["articles_news", "reputable_only"]
   ) as (
     | "research_papers"
     | "articles_news"
@@ -624,6 +624,7 @@ export async function planResearchHandler(
       | "student"
       | "teacher";
     const sourcePreferences = ((clarityRow.source_preferences as unknown[]) || [
+      "articles_news",
       "reputable_only",
     ]) as (
       | "research_papers"

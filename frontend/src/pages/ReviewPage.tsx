@@ -37,6 +37,7 @@ export function ReviewPage({
   const [activePageIndex, setActivePageIndex] = useState(0)
   const [approvedSegmentOrders, setApprovedSegmentOrders] = useState<number[]>([])
   const [relevanceThreshold, setRelevanceThreshold] = useState(0.78)
+  const [debouncedRelevanceThreshold, setDebouncedRelevanceThreshold] = useState(0.78)
   const [activeParagraphId, setActiveParagraphId] = useState<string | null>(null)
   const [activeSourceId, setActiveSourceId] = useState<string | null>(null)
   const [isSourcePreviewLoading, setIsSourcePreviewLoading] = useState(false)
@@ -65,6 +66,16 @@ export function ReviewPage({
   useEffect(() => {
     activeSourceIdRef.current = activeSourceId
   }, [activeSourceId])
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setDebouncedRelevanceThreshold(relevanceThreshold)
+    }, 320)
+
+    return () => {
+      window.clearTimeout(timeout)
+    }
+  }, [relevanceThreshold])
 
   function setPageSelection(nextPageIndex: number) {
     activePageIndexRef.current = nextPageIndex
@@ -453,7 +464,7 @@ export function ReviewPage({
       if (planId) {
         queryParams.set('planId', planId)
       }
-      queryParams.set('relevanceThreshold', relevanceThreshold.toFixed(2))
+      queryParams.set('relevanceThreshold', debouncedRelevanceThreshold.toFixed(2))
       const query = `?${queryParams.toString()}`
 
       try {
@@ -508,7 +519,7 @@ export function ReviewPage({
         window.clearTimeout(pollTimeout)
       }
     }
-  }, [apiBaseUrl, sessionId, planId, relevanceThreshold, onError])
+  }, [apiBaseUrl, sessionId, planId, debouncedRelevanceThreshold, onError])
 
   const activeParagraph = useMemo<ReviewParagraph | null>(() => {
     if (liveParagraphs.length === 0) {
@@ -593,7 +604,7 @@ export function ReviewPage({
 
   useEffect(() => {
     const draftPlanId = reviewData?.planId || ''
-    const thresholdKey = relevanceThreshold.toFixed(2)
+    const thresholdKey = debouncedRelevanceThreshold.toFixed(2)
     const requestKey = `${draftPlanId}::${thresholdKey}::${rawApprovedDraftMarkdown}`
 
     if (!draftPlanId || !rawApprovedDraftMarkdown) {
@@ -659,7 +670,7 @@ export function ReviewPage({
     apiBaseUrl,
     sessionId,
     reviewData?.planId,
-    relevanceThreshold,
+    debouncedRelevanceThreshold,
     rawApprovedDraftMarkdown,
     onApprovedDraftLoadingChange,
     onApprovedDraftErrorChange,

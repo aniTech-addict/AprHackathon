@@ -92,7 +92,10 @@ export function SessionSidebar({
       });
   }, [apiBaseUrl, isOpen, markdownContent, markdownPlanId, markdownSessionId, mode]);
 
-  const effectiveLoading = mode === "markdown" ? (markdownLoading ?? loading) : loading;
+  const hasMarkdownContent = mode === "markdown" && Boolean((markdownContent ?? markdown).trim());
+  const effectiveLoading = mode === "markdown"
+    ? ((markdownLoading ?? loading) && !hasMarkdownContent)
+    : loading;
   const effectiveError = mode === "markdown" ? (markdownError ?? error) : error;
   const effectiveMarkdown = mode === "markdown" ? (markdownContent ?? markdown) : "";
 
