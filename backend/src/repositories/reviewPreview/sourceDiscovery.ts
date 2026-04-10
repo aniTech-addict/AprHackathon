@@ -58,6 +58,35 @@ const BLOCKED_SEARCH_HOSTS = new Set([
   "www.ecosia.org",
 ]);
 
+const BLOCKED_RESOURCE_EXTENSIONS = new Set([
+  ".xlsx",
+  ".xls",
+  ".csv",
+  ".pdf",
+  ".doc",
+  ".docx",
+  ".ppt",
+  ".pptx",
+  ".zip",
+  ".rar",
+  ".7z",
+  ".gz",
+  ".tar",
+  ".json",
+  ".xml",
+]);
+
+function hasBlockedResourceExtension(pathname: string): boolean {
+  const normalizedPath = pathname.toLowerCase();
+  for (const extension of BLOCKED_RESOURCE_EXTENSIONS) {
+    if (normalizedPath.endsWith(extension)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function withTimeout(url: string, timeoutMs = 8000): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -103,6 +132,28 @@ export function normalizeTrustedUrl(rawUrl: string): string | null {
   }
 
   parsed.hostname = parsed.hostname.toLowerCase();
+
+  if (hasBlockedResourceExtension(parsed.pathname)) {
+    return null;
+  }
+
+  const formatHint = (
+    parsed.searchParams.get("format") ||
+    parsed.searchParams.get("file") ||
+    parsed.searchParams.get("download") ||
+    ""
+  ).toLowerCase();
+
+  if (
+    formatHint.includes("xlsx") ||
+    formatHint.includes("xls") ||
+    formatHint.includes("csv") ||
+    formatHint.includes("pdf") ||
+    formatHint.includes("doc") ||
+    formatHint.includes("zip")
+  ) {
+    return null;
+  }
 
   if (isSearchResultUrl(parsed)) {
     return null;
