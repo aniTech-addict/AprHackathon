@@ -31,6 +31,8 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
   const [sourcePreviewTitle, setSourcePreviewTitle] = useState<string>('')
   const [editingParagraphId, setEditingParagraphId] = useState<string | null>(null)
   const [editingDraft, setEditingDraft] = useState('')
+  const [aiRefineParagraphId, setAiRefineParagraphId] = useState<string | null>(null)
+  const [aiRefineInstruction, setAiRefineInstruction] = useState('')
   const [busyOperationLabel, setBusyOperationLabel] = useState<string | null>(null)
   const activePageIndexRef = useRef(0)
   const activeParagraphIdRef = useRef<string | null>(null)
@@ -60,6 +62,15 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
     setActiveSourceId(nextSourceId)
   }
 
+  function getPreferredSourceId(paragraph: ReviewParagraph | null): string | null {
+    if (!paragraph || paragraph.sources.length === 0) {
+      return null
+    }
+
+    const preferredIndex = Math.max(0, paragraph.paragraphIndex - 1)
+    return paragraph.sources[preferredIndex]?.id || paragraph.sources[0].id
+  }
+
   function startEditing(paragraph: ReviewParagraph) {
     setEditingParagraphId(paragraph.id)
     setEditingDraft(paragraph.content)
@@ -70,8 +81,18 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
     setEditingDraft('')
   }
 
+  function openAiRefine(paragraph: ReviewParagraph) {
+    setAiRefineParagraphId(paragraph.id)
+    setAiRefineInstruction('')
+  }
+
+  function cancelAiRefine() {
+    setAiRefineParagraphId(null)
+    setAiRefineInstruction('')
+  }
+
   function selectParagraph(paragraph: ReviewParagraph | null) {
-    setParagraphAndSourceSelection(paragraph?.id || null, paragraph?.sources?.[0]?.id || null)
+    setParagraphAndSourceSelection(paragraph?.id || null, getPreferredSourceId(paragraph))
   }
 
   function applyReviewPayload(payload: ReviewPreviewResponse) {
@@ -105,7 +126,7 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
 
     setParagraphAndSourceSelection(
       nextActiveParagraph.id,
-      keepCurrentSource?.id || nextActiveParagraph.sources[0].id,
+      keepCurrentSource?.id || getPreferredSourceId(nextActiveParagraph),
     )
   }
 
@@ -113,9 +134,9 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
     paragraphId: string,
     init: RequestInit,
     actionPathSuffix = '',
-  ) {
+  ): Promise<boolean> {
     if (!reviewData) {
-      return
+      return false
     }
 
     setBusyParagraphId(paragraphId)
@@ -144,10 +165,12 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
       const payload = (await response.json()) as ReviewPreviewResponse
       applyReviewPayload(payload)
       syncSelectionAfterPayload(payload)
+      return true
     } catch (mutationError) {
       const errorMessage = mutationError instanceof Error ? mutationError.message : 'Failed to update paragraph.'
       setError(errorMessage)
       onError(errorMessage)
+      return false
     } finally {
       setBusyParagraphId(null)
       setBusyOperationLabel(null)
@@ -194,12 +217,12 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
     cancelEditing()
   }
 
-  async function refineWithAi(paragraphId: string) {
+  async function refineWithAi(paragraphId: string, instruction?: string): Promise<boolean> {
     if (!reviewData) {
-      return
+      return false
     }
 
-    await runParagraphMutation(paragraphId, {
+    return runParagraphMutation(paragraphId, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
@@ -207,8 +230,17 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
       body: JSON.stringify({
         planId: reviewData.planId,
         mode: 'ai',
+        instruction,
       }),
     })
+  }
+
+  async function submitAiRefine(paragraphId: string) {
+    const instruction = aiRefineInstruction.trim() || undefined
+    const success = await refineWithAi(paragraphId, instruction)
+    if (success) {
+      cancelAiRefine()
+    }
   }
 
   async function approveParagraph(paragraphId: string) {
@@ -362,11 +394,10 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
       applyReviewPayload(payload)
 
       const nextIndex = Math.min(activePageIndex + 1, Math.max(payload.pages.length - 1, 0))
-      setActivePageIndex(nextIndex)
+      setPageSelection(nextIndex)
 
       const nextParagraph = payload.pages[nextIndex]?.paragraphs?.[0] || payload.paragraphs[0] || null
-      setActiveParagraphId(nextParagraph?.id || null)
-      setActiveSourceId(nextParagraph?.sources[0]?.id || null)
+      setParagraphAndSourceSelection(nextParagraph?.id || null, getPreferredSourceId(nextParagraph))
       setEditingParagraphId(null)
       setEditingDraft('')
     } catch (approveError) {
@@ -408,10 +439,9 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
 
         const hasActiveSelection = Boolean(activeParagraphIdRef.current)
         if (!hasActiveSelection) {
-          setActivePageIndex(0)
+          setPageSelection(0)
           const firstParagraph = payload.pages?.[0]?.paragraphs?.[0] || payload.paragraphs[0] || null
-          setActiveParagraphId(firstParagraph?.id || null)
-          setActiveSourceId(firstParagraph?.sources[0]?.id || null)
+          setParagraphAndSourceSelection(firstParagraph?.id || null, getPreferredSourceId(firstParagraph))
         } else {
           syncSelectionAfterPayload(payload)
         }
@@ -493,7 +523,7 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
       return
     }
 
-    setActivePageIndex(nextIndex)
+    setPageSelection(nextIndex)
     const firstParagraph = reviewPages[nextIndex]?.paragraphs?.[0]
     selectParagraph(firstParagraph || null)
     setEditingParagraphId(null)
@@ -514,6 +544,7 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
 
   useEffect(() => {
     if (!activeParagraph || activeParagraph.sources.length === 0) {
+      activeSourceIdRef.current = null
       setActiveSourceId(null)
       setIsSourcePreviewLoading(false)
       setSourcePreviewError(null)
@@ -522,7 +553,9 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
       return
     }
 
-    setActiveSourceId(activeParagraph.sources[0].id)
+    const preferredSourceId = getPreferredSourceId(activeParagraph)
+    activeSourceIdRef.current = preferredSourceId
+    setActiveSourceId(preferredSourceId)
   }, [activeParagraph?.id])
 
   useEffect(() => {
@@ -786,10 +819,10 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
                               <button
                                 type="button"
                                 className="text-button"
-                                onClick={() => void refineWithAi(paragraph.id)}
+                                onClick={() => openAiRefine(paragraph)}
                                 disabled={busyParagraphId === paragraph.id}
                               >
-                                {busyParagraphId === paragraph.id ? 'Refining...' : 'AI Refine'}
+                                AI Refine
                               </button>
                               <button
                                 type="button"
@@ -808,6 +841,40 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
                                 Delete Paragraph
                               </button>
                             </div>
+
+                            {aiRefineParagraphId === paragraph.id ? (
+                              <div className="ai-refine-box">
+                                <label className="label" htmlFor={`ai-instruction-${paragraph.id}`}>
+                                  AI refinement instruction (optional)
+                                </label>
+                                <textarea
+                                  id={`ai-instruction-${paragraph.id}`}
+                                  className="field"
+                                  rows={3}
+                                  placeholder="Example: keep the tone analytical, focus on causal drivers, and add stronger transitions to next paragraph."
+                                  value={aiRefineInstruction}
+                                  onChange={(event) => setAiRefineInstruction(event.target.value)}
+                                />
+                                <div className="review-doc-edit-actions">
+                                  <button
+                                    type="button"
+                                    className="text-button"
+                                    onClick={() => void submitAiRefine(paragraph.id)}
+                                    disabled={busyParagraphId === paragraph.id}
+                                  >
+                                    {busyParagraphId === paragraph.id ? 'Refining...' : 'Apply AI Refine'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="text-button danger"
+                                    onClick={cancelAiRefine}
+                                    disabled={busyParagraphId === paragraph.id}
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            ) : null}
                           </>
                         )}
                       </section>
@@ -840,6 +907,7 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
                               aria-selected={isSourceActive}
                               className={`source-tab-button ${isSourceActive ? 'is-active' : ''}`}
                               onClick={() => {
+                                activeSourceIdRef.current = source.id
                                 setActiveSourceId(source.id)
                               }}
                             >
