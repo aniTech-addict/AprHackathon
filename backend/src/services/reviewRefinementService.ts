@@ -5,6 +5,8 @@ export interface RefineParagraphWithAiArgs {
   topic: string;
   segmentTitle: string;
   paragraphContent: string;
+  previousParagraphContent?: string | null;
+  nextParagraphContent?: string | null;
   sources: Array<{ title: string; url: string; excerpt: string }>;
   instruction?: string;
 }
@@ -19,18 +21,27 @@ export async function refineParagraphWithAi(
     .join("\n\n");
 
   const instruction = (args.instruction || "").trim();
+  const previousParagraphContent = (args.previousParagraphContent || "").trim();
+  const nextParagraphContent = (args.nextParagraphContent || "").trim();
 
   const prompt = `Topic: ${args.topic}
 Segment: ${args.segmentTitle}
 
+Previous paragraph (if any):
+${previousParagraphContent || "N/A"}
+
 Current paragraph:
 ${args.paragraphContent}
+
+Next paragraph (if any):
+${nextParagraphContent || "N/A"}
 
 Sources:
 ${sourceContext || "No source context provided."}
 
 Task:
 Rewrite this paragraph to improve clarity, factual grounding, and flow.
+Preserve coherence with adjacent paragraphs and avoid repetition across the three-paragraph page.
 Do not invent facts.
 Keep it to one cohesive paragraph.
 ${instruction ? `User refinement instruction: ${instruction}` : ""}`;

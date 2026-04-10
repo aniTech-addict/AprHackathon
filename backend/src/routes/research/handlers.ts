@@ -667,6 +667,8 @@ export async function refineReviewParagraphHandler(
         topic: session.topic,
         segmentTitle: context.paragraph.segmentTitle,
         paragraphContent: context.paragraph.content,
+        previousParagraphContent: context.previous?.content || null,
+        nextParagraphContent: context.next?.content || null,
         sources: context.paragraph.sources,
         instruction: body.instruction,
       });

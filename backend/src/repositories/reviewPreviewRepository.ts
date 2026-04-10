@@ -6,6 +6,7 @@ import {
   buildReviewSourcesForParagraph,
   getNextSegmentToGenerate,
   getParagraphOrder,
+  harmonizeSegmentParagraphs,
   hasStrictValidSources,
 } from "./reviewPreview/contentBuilders";
 import { discoverTrustedWebSources } from "./reviewPreview/sourceDiscovery";
@@ -83,10 +84,39 @@ async function insertSegmentParagraphsAndSources(
   segment: PlanStructureSegment,
 ): Promise<void> {
   const discoveredSources = await discoverTrustedWebSources(args.topic, segment.topic, 3);
+  const previousParagraphs: string[] = [];
+  const generatedParagraphs: string[] = [];
+  const paragraphIds: string[] = [];
+  const sourcesByParagraph: Array<Array<Omit<ReviewPreviewSource, "id">>> = [];
 
   for (let paragraphIndex = 1; paragraphIndex <= 3; paragraphIndex += 1) {
+    const content = await buildReviewParagraphContent(
+      args.topic,
+      segment,
+      paragraphIndex,
+      previousParagraphs,
+      discoveredSources,
+    );
     const paragraphId = randomUUID();
-    const content = buildReviewParagraphContent(args.topic, segment, paragraphIndex);
+    const sources = buildReviewSourcesForParagraph(segment, paragraphIndex, discoveredSources);
+
+    generatedParagraphs.push(content);
+    previousParagraphs.push(content);
+    paragraphIds.push(paragraphId);
+    sourcesByParagraph.push(sources);
+  }
+
+  const harmonizedParagraphs = await harmonizeSegmentParagraphs({
+    topic: args.topic,
+    segment,
+    paragraphs: generatedParagraphs,
+    sources: discoveredSources,
+  });
+
+  for (let paragraphIndex = 1; paragraphIndex <= harmonizedParagraphs.length; paragraphIndex += 1) {
+    const paragraphId = paragraphIds[paragraphIndex - 1];
+    const content = harmonizedParagraphs[paragraphIndex - 1];
+    const sources = sourcesByParagraph[paragraphIndex - 1] || [];
 
     await client.query(
       `
@@ -118,7 +148,6 @@ async function insertSegmentParagraphsAndSources(
       ],
     );
 
-    const sources = buildReviewSourcesForParagraph(segment, paragraphIndex, discoveredSources);
     for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex += 1) {
       const source = sources[sourceIndex];
       await client.query(
