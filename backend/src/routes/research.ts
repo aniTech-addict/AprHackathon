@@ -7,6 +7,7 @@ import {
   refineReviewParagraphHandler,
   planResearchHandler,
   reviewExportHandler,
+  reviewDraftMarkdownHandler,
   reviewPreviewHandler,
   sourcePreviewHandler,
   startResearchHandler,
@@ -35,5 +36,6 @@ router.delete("/:sessionId/review-preview/paragraphs/:paragraphId", deleteReview
 router.post("/:sessionId/review-preview/approve", approveReviewPageHandler);
 router.get("/:sessionId/review-export", reviewExportHandler);
 router.get("/:sessionId/source-preview", sourcePreviewHandler);
+router.get("/:sessionId/review-draft-markdown", reviewDraftMarkdownHandler);
 
 export { router as researchRouter };

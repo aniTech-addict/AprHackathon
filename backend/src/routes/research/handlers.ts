@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import type { Request, Response } from "express";
 import { pool } from "../../db";
 import {
@@ -28,6 +28,7 @@ import {
   stabilizeParagraphFlow,
 } from "../../services/reviewRefinementService";
 import { normalizeTrustedUrl } from "../../repositories/reviewPreview/sourceDiscovery";
+import { streamJsonChatCompletion } from "../../services/openRouterClient";
 import { decideClarityNextStep } from "../../services/clarityLoopService";
 import { classifyInput } from "../../services/inputClassifier";
 import {
@@ -55,6 +56,8 @@ interface ReviewPlanRecord {
   structure: unknown;
   status: string;
 }
+
+const polishedDraftCache = new Map<string, { hash: string; markdown: string }>();
 
 function stripHtmlToText(html: string): string {
   return html
@@ -85,6 +88,122 @@ function buildPreviewExcerpt(text: string, maxLength = 2200): string {
   }
 
   return `${text.slice(0, maxLength).trim()}...`;
+}
+
+function buildApprovedDraftMarkdown(args: {
+  topic: string;
+  approvedSegmentOrders: number[];
+  paragraphs: ReviewPreviewParagraph[];
+}): string {
+  if (args.approvedSegmentOrders.length === 0) {
+    return "";
+  }
+
+  const approvedSet = new Set(args.approvedSegmentOrders);
+  const approvedParagraphs = args.paragraphs
+    .filter(
+      (paragraph) =>
+        paragraph.status === "approved" && approvedSet.has(paragraph.segmentOrder),
+    )
+    .sort(
+      (a, b) =>
+        a.segmentOrder - b.segmentOrder || a.paragraphIndex - b.paragraphIndex,
+    );
+
+  if (approvedParagraphs.length === 0) {
+    return "";
+  }
+
+  const lines: string[] = [
+    `# Approved Draft Progress: ${args.topic}`,
+    "",
+    `Generated at: ${new Date().toISOString()}`,
+    "",
+  ];
+
+  let currentSegmentOrder = -1;
+  for (const paragraph of approvedParagraphs) {
+    if (paragraph.segmentOrder !== currentSegmentOrder) {
+      currentSegmentOrder = paragraph.segmentOrder;
+      lines.push(`## ${paragraph.segmentOrder}. ${paragraph.segmentTitle}`);
+      lines.push("");
+    }
+
+    lines.push(paragraph.content);
+    lines.push("");
+  }
+
+  return lines.join("\n").trim();
+}
+
+async function polishApprovedDraftMarkdown(args: {
+  cacheKey: string;
+  topic: string;
+  markdown: string;
+}): Promise<string> {
+  const trimmed = args.markdown.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  const hash = createHash("sha256").update(trimmed).digest("hex");
+  const cached = polishedDraftCache.get(args.cacheKey);
+  if (cached && cached.hash === hash) {
+    return cached.markdown;
+  }
+
+  if (!process.env.OPENROUTER_API_KEY) {
+    polishedDraftCache.set(args.cacheKey, { hash, markdown: trimmed });
+    return trimmed;
+  }
+
+  const result = await streamJsonChatCompletion({
+    operation: "review-draft-markdown-polish",
+    model: process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini",
+    temperature: 0.1,
+    messages: [
+      {
+        role: "system",
+        content:
+          "You are an expert research editor. Rewrite markdown for professional report flow while preserving facts, figures, and meaning. Keep headings and paragraph count. Remove repetitive transition openers and improve natural continuity. Return strict JSON only.",
+      },
+      {
+        role: "user",
+        content: `Topic: ${args.topic}\n\nPolish this markdown draft for natural report flow without changing factual claims:\n\n${trimmed}`,
+      },
+    ],
+    responseFormat: {
+      type: "json_schema",
+      jsonSchema: {
+        name: "polished_review_markdown",
+        strict: true,
+        schema: {
+          type: "object",
+          properties: {
+            markdown: { type: "string" },
+          },
+          required: ["markdown"],
+          additionalProperties: false,
+        },
+      },
+    },
+  });
+
+  if (!result) {
+    polishedDraftCache.set(args.cacheKey, { hash, markdown: trimmed });
+    return trimmed;
+  }
+
+  try {
+    const parsed = JSON.parse(result.content) as { markdown?: unknown };
+    const polished = String(parsed.markdown || "").trim();
+    const finalMarkdown = polished || trimmed;
+    polishedDraftCache.set(args.cacheKey, { hash, markdown: finalMarkdown });
+    return finalMarkdown;
+  } catch {
+    polishedDraftCache.set(args.cacheKey, { hash, markdown: trimmed });
+    return trimmed;
+  }
 }
 
 function looksLikeBlockedOrRedirectPage(text: string, title: string): boolean {
@@ -1058,6 +1177,69 @@ export async function sourcePreviewHandler(
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to preview source.";
     return res.status(502).json({ message });
+  }
+}
+
+export async function reviewDraftMarkdownHandler(
+  req: Request,
+  res: Response,
+): Promise<Response> {
+  const sessionId = String(req.params.sessionId || "");
+  const requestedPlanId = String(req.query.planId || "").trim();
+
+  const session = await getSession(sessionId);
+  if (!session) {
+    return res.status(404).json({ message: "Session not found." });
+  }
+
+  try {
+    const planRow = await getPlanForReview(sessionId, requestedPlanId);
+    if (!planRow) {
+      return res.status(404).json({ message: "No research plan found." });
+    }
+
+    const segments = normalizePlanSegments(planRow.structure);
+    if (segments.length === 0) {
+      return res.status(404).json({ message: "No plan segments available." });
+    }
+
+    await ensureReviewPreview({
+      sessionId,
+      planId: planRow.id,
+      topic: session.topic,
+      segments,
+    });
+
+    const payload = await buildReviewPreviewPayload(
+      sessionId,
+      planRow.id,
+      session.topic,
+      planRow.status,
+    );
+
+    const rawMarkdown = buildApprovedDraftMarkdown({
+      topic: session.topic,
+      approvedSegmentOrders: payload.approvedSegmentOrders,
+      paragraphs: payload.paragraphs,
+    });
+
+    const markdown = await polishApprovedDraftMarkdown({
+      cacheKey: `${sessionId}:${planRow.id}`,
+      topic: session.topic,
+      markdown: rawMarkdown,
+    });
+
+    return res.status(200).json({
+      sessionId,
+      planId: planRow.id,
+      topic: session.topic,
+      approvedSegmentOrders: payload.approvedSegmentOrders,
+      markdown,
+      rawMarkdown,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to build draft markdown.";
+    return res.status(500).json({ message });
   }
 }
 
