@@ -52,6 +52,7 @@ export function ReviewPage({
   const activePageIndexRef = useRef(0)
   const activeParagraphIdRef = useRef<string | null>(null)
   const activeSourceIdRef = useRef<string | null>(null)
+  const lastPolishRequestKeyRef = useRef<string>('')
 
   useEffect(() => {
     activePageIndexRef.current = activePageIndex
@@ -572,8 +573,6 @@ export function ReviewPage({
     const lines: string[] = [
       `# Approved Draft Progress: ${reviewData.topic}`,
       '',
-      `Generated at: ${new Date().toISOString()}`,
-      '',
     ]
 
     let currentSegmentOrder = -1
@@ -594,13 +593,22 @@ export function ReviewPage({
 
   useEffect(() => {
     const draftPlanId = reviewData?.planId || ''
+    const thresholdKey = relevanceThreshold.toFixed(2)
+    const requestKey = `${draftPlanId}::${thresholdKey}::${rawApprovedDraftMarkdown}`
 
     if (!draftPlanId || !rawApprovedDraftMarkdown) {
       setApprovedDraftMarkdown('')
+      lastPolishRequestKeyRef.current = ''
       onApprovedDraftLoadingChange?.(false)
       onApprovedDraftErrorChange?.(null)
       return
     }
+
+    if (lastPolishRequestKeyRef.current === requestKey) {
+      return
+    }
+
+    lastPolishRequestKeyRef.current = requestKey
 
     const controller = new AbortController()
 
@@ -610,7 +618,7 @@ export function ReviewPage({
 
       const query = new URLSearchParams({
         planId: draftPlanId,
-        relevanceThreshold: relevanceThreshold.toFixed(2),
+        relevanceThreshold: thresholdKey,
       })
 
       try {
@@ -650,7 +658,7 @@ export function ReviewPage({
   }, [
     apiBaseUrl,
     sessionId,
-    reviewData,
+    reviewData?.planId,
     relevanceThreshold,
     rawApprovedDraftMarkdown,
     onApprovedDraftLoadingChange,
