@@ -335,6 +335,15 @@ function normalizePlanSegments(structure: unknown): PlanStructureSegment[] {
   return segments.sort((a, b) => a.order - b.order);
 }
 
+function normalizeRelevanceThreshold(rawValue: unknown): number {
+  const numeric = Number(rawValue);
+  if (!Number.isFinite(numeric)) {
+    return 0.78;
+  }
+
+  return Math.max(0.6, Math.min(0.95, numeric));
+}
+
 async function buildResearchFocusContext(
   sessionId: string,
   topic: string,
@@ -735,6 +744,7 @@ export async function reviewPreviewHandler(
 ): Promise<Response> {
   const sessionId = String(req.params.sessionId || "");
   const requestedPlanId = String(req.query.planId || "").trim();
+  const relevanceThreshold = normalizeRelevanceThreshold(req.query.relevanceThreshold);
 
   const session = await getSession(sessionId);
   if (!session) {
@@ -763,6 +773,7 @@ export async function reviewPreviewHandler(
       planId: planRow.id,
       topic: session.topic,
       researchFocusContext,
+      relevanceThreshold,
       segments,
     });
 
@@ -793,6 +804,7 @@ export async function approveReviewPageHandler(
   const body = req.body as ApproveReviewPageBody;
   const planId = String(body.planId || "").trim();
   const segmentOrder = Number(body.segmentOrder || 0);
+  const relevanceThreshold = normalizeRelevanceThreshold(body.relevanceThreshold);
 
   if (!planId) {
     return res.status(400).json({ message: "Plan ID is required." });
@@ -825,6 +837,7 @@ export async function approveReviewPageHandler(
       planId: planRow.id,
       topic: session.topic,
       researchFocusContext,
+      relevanceThreshold,
       segments,
     });
 
@@ -857,6 +870,7 @@ export async function approveReviewPageHandler(
       planId: planRow.id,
       topic: session.topic,
       researchFocusContext,
+      relevanceThreshold,
       segments,
       segmentOrder,
     });
@@ -1069,6 +1083,7 @@ export async function reviewExportHandler(
 ): Promise<Response> {
   const sessionId = String(req.params.sessionId || "");
   const requestedPlanId = String(req.query.planId || "").trim();
+  const relevanceThreshold = normalizeRelevanceThreshold(req.query.relevanceThreshold);
 
   const session = await getSession(sessionId);
   if (!session) {
@@ -1097,6 +1112,7 @@ export async function reviewExportHandler(
       planId: planRow.id,
       topic: session.topic,
       researchFocusContext,
+      relevanceThreshold,
       segments,
     });
 
@@ -1235,6 +1251,7 @@ export async function reviewDraftMarkdownHandler(
 ): Promise<Response> {
   const sessionId = String(req.params.sessionId || "");
   const requestedPlanId = String(req.query.planId || "").trim();
+  const relevanceThreshold = normalizeRelevanceThreshold(req.query.relevanceThreshold);
 
   const session = await getSession(sessionId);
   if (!session) {
@@ -1259,6 +1276,7 @@ export async function reviewDraftMarkdownHandler(
       planId: planRow.id,
       topic: session.topic,
       researchFocusContext,
+      relevanceThreshold,
       segments,
     });
 
