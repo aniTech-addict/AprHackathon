@@ -15,6 +15,7 @@ function App() {
   const [initialClarityRound, setInitialClarityRound] = useState(1)
   const [_error, setError] = useState<string | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [reviewHasGeneratedParagraphs, setReviewHasGeneratedParagraphs] = useState(false)
 
   const apiBaseUrl = useMemo(
     () => import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000',
@@ -47,6 +48,7 @@ function App() {
     setError(null)
     setSessionId(nextSessionId)
     setPlanId(nextPlanId)
+    setReviewHasGeneratedParagraphs(false)
     setCurrentPhase('review')
   }
 
@@ -57,6 +59,7 @@ function App() {
   function handleSessionSelect(selectedSessionId: string) {
     setSessionId(selectedSessionId)
     setPlanId(null)
+    setReviewHasGeneratedParagraphs(false)
     setCurrentPhase('input')
     setSidebarOpen(false)
   }
@@ -87,17 +90,33 @@ function App() {
       />
     )
   } else if (currentPhase === 'review' && sessionId) {
-    content = <ReviewPage apiBaseUrl={apiBaseUrl} sessionId={sessionId} planId={planId} onError={handleError} />
+    content = (
+      <ReviewPage
+        apiBaseUrl={apiBaseUrl}
+        sessionId={sessionId}
+        planId={planId}
+        onError={handleError}
+        onParagraphGenerationStateChange={setReviewHasGeneratedParagraphs}
+      />
+    )
   }
+
+  const showSidebar = currentPhase !== 'review' || reviewHasGeneratedParagraphs
 
   return (
     <>
-      <SessionSidebar
-        isOpen={sidebarOpen}
-        onToggle={() => setSidebarOpen(!sidebarOpen)}
-        currentSessionId={sessionId}
-        onSessionSelect={handleSessionSelect}
-      />
+      {showSidebar ? (
+        <SessionSidebar
+          isOpen={sidebarOpen}
+          onToggle={() => setSidebarOpen(!sidebarOpen)}
+          mode={currentPhase === 'review' ? 'markdown' : 'sessions'}
+          apiBaseUrl={apiBaseUrl}
+          currentSessionId={sessionId}
+          onSessionSelect={handleSessionSelect}
+          markdownSessionId={currentPhase === 'review' ? sessionId : null}
+          markdownPlanId={currentPhase === 'review' ? planId : null}
+        />
+      ) : null}
       {content}
     </>
   )

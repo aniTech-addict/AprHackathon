@@ -5,17 +5,26 @@ import "../styles/SessionSidebar.css";
 interface SessionSidebarProps {
   isOpen: boolean;
   onToggle: () => void;
-  currentSessionId: string | null;
-  onSessionSelect: (sessionId: string) => void;
+  mode?: "sessions" | "markdown";
+  apiBaseUrl?: string;
+  currentSessionId?: string | null;
+  onSessionSelect?: (sessionId: string) => void;
+  markdownSessionId?: string | null;
+  markdownPlanId?: string | null;
 }
 
 export function SessionSidebar({
   isOpen,
   onToggle,
-  currentSessionId,
+  mode = "sessions",
+  apiBaseUrl = "",
+  currentSessionId = null,
   onSessionSelect,
+  markdownSessionId = null,
+  markdownPlanId = null,
 }: SessionSidebarProps) {
   const [sessions, setSessions] = useState<SessionListItem[]>([]);
+  const [markdown, setMarkdown] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -25,7 +34,37 @@ export function SessionSidebar({
     setLoading(true);
     setError(null);
 
-    fetch("/api/research/sessions")
+    if (mode === "markdown") {
+      if (!markdownSessionId) {
+        setMarkdown("");
+        setLoading(false);
+        setError("No active review session.");
+        return;
+      }
+
+      const query = markdownPlanId
+        ? `?planId=${encodeURIComponent(markdownPlanId)}`
+        : "";
+
+      fetch(`${apiBaseUrl}/api/research/${markdownSessionId}/review-draft-markdown${query}`)
+        .then((res) => {
+          if (!res.ok) throw new Error("Failed to fetch markdown draft");
+          return res.json() as Promise<{ markdown?: string }>;
+        })
+        .then((data) => {
+          setMarkdown(String(data.markdown || ""));
+          setLoading(false);
+        })
+        .catch((err) => {
+          console.error("Error fetching markdown draft:", err);
+          setError("Failed to load draft markdown");
+          setLoading(false);
+        });
+
+      return;
+    }
+
+    fetch(`${apiBaseUrl}/api/research/sessions`)
       .then((res) => {
         if (!res.ok) throw new Error("Failed to fetch sessions");
         return res.json();
@@ -39,7 +78,7 @@ export function SessionSidebar({
         setError("Failed to load sessions");
         setLoading(false);
       });
-  }, [isOpen]);
+  }, [apiBaseUrl, isOpen, markdownPlanId, markdownSessionId, mode]);
 
   return (
     <>
@@ -56,7 +95,7 @@ export function SessionSidebar({
       {/* Sidebar */}
       <aside className={`session-sidebar ${isOpen ? "open" : ""}`}>
         <div className="sidebar-header">
-          <h2>Sessions</h2>
+          <h2>{mode === "markdown" ? "Approved Draft" : "Sessions"}</h2>
           <button
             className="sidebar-close"
             onClick={onToggle}
@@ -70,11 +109,19 @@ export function SessionSidebar({
           {loading && <div className="sidebar-loading">Loading...</div>}
           {error && <div className="sidebar-error">{error}</div>}
 
-          {!loading && !error && sessions.length === 0 && (
+          {!loading && !error && mode === "markdown" && !markdown.trim() && (
+            <div className="sidebar-empty">No approved content yet</div>
+          )}
+
+          {!loading && !error && mode === "markdown" && markdown.trim() && (
+            <pre className="sidebar-markdown">{markdown}</pre>
+          )}
+
+          {!loading && !error && mode === "sessions" && sessions.length === 0 && (
             <div className="sidebar-empty">No sessions yet</div>
           )}
 
-          {!loading && !error && sessions.length > 0 && (
+          {!loading && !error && mode === "sessions" && sessions.length > 0 && (
             <ul className="sessions-list">
               {sessions.map((session) => (
                 <li
@@ -82,12 +129,12 @@ export function SessionSidebar({
                   className={`session-item ${
                     session.id === currentSessionId ? "active" : ""
                   }`}
-                  onClick={() => onSessionSelect(session.id)}
+                  onClick={() => onSessionSelect?.(session.id)}
                   role="button"
                   tabIndex={0}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
-                      onSessionSelect(session.id);
+                      onSessionSelect?.(session.id);
                     }
                   }}
                 >

@@ -8,9 +8,16 @@ interface ReviewPageProps {
   sessionId: string
   planId: string | null
   onError: (error: string) => void
+  onParagraphGenerationStateChange?: (hasGeneratedParagraphs: boolean) => void
 }
 
-export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPageProps) {
+export function ReviewPage({
+  apiBaseUrl,
+  sessionId,
+  planId,
+  onError,
+  onParagraphGenerationStateChange,
+}: ReviewPageProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [isGeneratingPreview, setIsGeneratingPreview] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
@@ -33,6 +40,7 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
   const [editingDraft, setEditingDraft] = useState('')
   const [aiRefineParagraphId, setAiRefineParagraphId] = useState<string | null>(null)
   const [aiRefineInstruction, setAiRefineInstruction] = useState('')
+  const [approvedDraftMarkdown, setApprovedDraftMarkdown] = useState('')
   const [busyOperationLabel, setBusyOperationLabel] = useState<string | null>(null)
   const activePageIndexRef = useRef(0)
   const activeParagraphIdRef = useRef<string | null>(null)
@@ -191,6 +199,11 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
         : paragraph,
     )
   }, [documentParagraphs, editingParagraphId, editingDraft])
+
+  useEffect(() => {
+    const hasGeneratedParagraphs = liveParagraphs.some((paragraph) => paragraph.content.trim().length > 0)
+    onParagraphGenerationStateChange?.(hasGeneratedParagraphs)
+  }, [liveParagraphs, onParagraphGenerationStateChange])
 
   async function saveEditing(paragraphId: string) {
     const nextContent = editingDraft.trim()
@@ -518,6 +531,110 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
 
   const currentPageApproved = Boolean(activePage && approvedSegmentOrders.includes(activePage.segmentOrder))
 
+  const rawApprovedDraftMarkdown = useMemo(() => {
+    if (!reviewData) {
+      return ''
+    }
+
+    const approvedSet = new Set(approvedSegmentOrders)
+    const segmentTitleByOrder = new Map<number, string>()
+    for (const page of reviewPages) {
+      segmentTitleByOrder.set(page.segmentOrder, page.segmentTitle)
+    }
+
+    const approvedParagraphs = liveParagraphs
+      .filter((paragraph) => paragraph.status === 'approved' && approvedSet.has(paragraph.segmentOrder))
+      .sort((a, b) => a.segmentOrder - b.segmentOrder || a.paragraphIndex - b.paragraphIndex)
+
+    if (approvedParagraphs.length === 0) {
+      return ''
+    }
+
+    const lines: string[] = [
+      `# Approved Draft Progress: ${reviewData.topic}`,
+      '',
+      `Generated at: ${new Date().toISOString()}`,
+      '',
+    ]
+
+    let currentSegmentOrder = -1
+    for (const paragraph of approvedParagraphs) {
+      if (paragraph.segmentOrder !== currentSegmentOrder) {
+        currentSegmentOrder = paragraph.segmentOrder
+        const title = segmentTitleByOrder.get(paragraph.segmentOrder) || `Section ${paragraph.segmentOrder}`
+        lines.push(`## ${paragraph.segmentOrder}. ${title}`)
+        lines.push('')
+      }
+
+      lines.push(paragraph.content)
+      lines.push('')
+    }
+
+    return lines.join('\n').trim()
+  }, [reviewData, approvedSegmentOrders, reviewPages, liveParagraphs])
+
+  useEffect(() => {
+    const draftPlanId = reviewData?.planId || ''
+
+    if (!draftPlanId || !rawApprovedDraftMarkdown) {
+      setApprovedDraftMarkdown('')
+      return
+    }
+
+    const controller = new AbortController()
+
+    async function loadPolishedDraftMarkdown() {
+      const query = new URLSearchParams({
+        planId: draftPlanId,
+      })
+
+      try {
+        const response = await fetch(
+          `${apiBaseUrl}/api/research/${sessionId}/review-draft-markdown?${query.toString()}`,
+          { signal: controller.signal },
+        )
+
+        if (!response.ok) {
+          const payload = (await response.json()) as { message?: string }
+          throw new Error(payload.message || 'Failed to build polished markdown draft.')
+        }
+
+        const payload = (await response.json()) as { markdown?: string }
+        const polished = String(payload.markdown || '').trim()
+        setApprovedDraftMarkdown(polished || rawApprovedDraftMarkdown)
+      } catch (draftError) {
+        if ((draftError as { name?: string }).name === 'AbortError') {
+          return
+        }
+
+        setApprovedDraftMarkdown(rawApprovedDraftMarkdown)
+      }
+    }
+
+    void loadPolishedDraftMarkdown()
+
+    return () => {
+      controller.abort()
+    }
+  }, [apiBaseUrl, sessionId, reviewData, rawApprovedDraftMarkdown])
+
+  async function handleDownloadApprovedDraftMarkdown() {
+    if (!reviewData || !approvedDraftMarkdown) {
+      return
+    }
+
+    const blob = new Blob([approvedDraftMarkdown], {
+      type: 'text/markdown;charset=utf-8',
+    })
+
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `approved-draft-${reviewData.sessionId}-${reviewData.planId}.md`
+    link.click()
+    window.URL.revokeObjectURL(url)
+  }
+
   function goToPage(nextIndex: number) {
     if (nextIndex < 0 || nextIndex >= reviewPages.length) {
       return
@@ -678,6 +795,14 @@ export function ReviewPage({ apiBaseUrl, sessionId, planId, onError }: ReviewPag
           </button>
           <button type="button" className="button" onClick={handleExport} disabled={isExporting}>
             {isExporting ? 'Exporting...' : 'Export Review JSON'}
+          </button>
+          <button
+            type="button"
+            className="text-button"
+            onClick={() => void handleDownloadApprovedDraftMarkdown()}
+            disabled={!approvedDraftMarkdown}
+          >
+            Download Approved Draft (.md)
           </button>
           <button
             type="button"
