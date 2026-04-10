@@ -16,6 +16,9 @@ function App() {
   const [_error, setError] = useState<string | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [reviewHasGeneratedParagraphs, setReviewHasGeneratedParagraphs] = useState(false)
+  const [reviewDraftMarkdown, setReviewDraftMarkdown] = useState('')
+  const [reviewDraftLoading, setReviewDraftLoading] = useState(false)
+  const [reviewDraftError, setReviewDraftError] = useState<string | null>(null)
 
   const apiBaseUrl = useMemo(
     () => import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000',
@@ -49,6 +52,9 @@ function App() {
     setSessionId(nextSessionId)
     setPlanId(nextPlanId)
     setReviewHasGeneratedParagraphs(false)
+    setReviewDraftMarkdown('')
+    setReviewDraftLoading(false)
+    setReviewDraftError(null)
     setCurrentPhase('review')
   }
 
@@ -60,6 +66,9 @@ function App() {
     setSessionId(selectedSessionId)
     setPlanId(null)
     setReviewHasGeneratedParagraphs(false)
+    setReviewDraftMarkdown('')
+    setReviewDraftLoading(false)
+    setReviewDraftError(null)
     setCurrentPhase('input')
     setSidebarOpen(false)
   }
@@ -97,6 +106,9 @@ function App() {
         planId={planId}
         onError={handleError}
         onParagraphGenerationStateChange={setReviewHasGeneratedParagraphs}
+        onApprovedDraftMarkdownChange={setReviewDraftMarkdown}
+        onApprovedDraftLoadingChange={setReviewDraftLoading}
+        onApprovedDraftErrorChange={setReviewDraftError}
       />
     )
   }
@@ -115,6 +127,9 @@ function App() {
           onSessionSelect={handleSessionSelect}
           markdownSessionId={currentPhase === 'review' ? sessionId : null}
           markdownPlanId={currentPhase === 'review' ? planId : null}
+          markdownContent={currentPhase === 'review' ? reviewDraftMarkdown : undefined}
+          markdownLoading={currentPhase === 'review' ? reviewDraftLoading : undefined}
+          markdownError={currentPhase === 'review' ? reviewDraftError : undefined}
         />
       ) : null}
       {content}
