@@ -30,6 +30,16 @@ export type {
   ReviewPreviewSource,
 } from "./reviewPreview/types";
 
+const activePreviewGenerations = new Set<string>();
+
+function getPreviewGenerationKey(sessionId: string, planId: string): string {
+  return `${sessionId}:${planId}`;
+}
+
+export function isReviewPreviewGenerationInProgress(sessionId: string, planId: string): boolean {
+  return activePreviewGenerations.has(getPreviewGenerationKey(sessionId, planId));
+}
+
 async function getReviewPageProgressWithClient(
   client: PoolClient,
   sessionId: string,
@@ -87,7 +97,6 @@ async function insertSegmentParagraphsAndSources(
   const previousParagraphs: string[] = [];
   const generatedParagraphs: string[] = [];
   const paragraphIds: string[] = [];
-  const sourcesByParagraph: Array<Array<Omit<ReviewPreviewSource, "id">>> = [];
 
   for (let paragraphIndex = 1; paragraphIndex <= 3; paragraphIndex += 1) {
     const content = await buildReviewParagraphContent(
@@ -103,20 +112,6 @@ async function insertSegmentParagraphsAndSources(
     generatedParagraphs.push(content);
     previousParagraphs.push(content);
     paragraphIds.push(paragraphId);
-    sourcesByParagraph.push(sources);
-  }
-
-  const harmonizedParagraphs = await harmonizeSegmentParagraphs({
-    topic: args.topic,
-    segment,
-    paragraphs: generatedParagraphs,
-    sources: discoveredSources,
-  });
-
-  for (let paragraphIndex = 1; paragraphIndex <= harmonizedParagraphs.length; paragraphIndex += 1) {
-    const paragraphId = paragraphIds[paragraphIndex - 1];
-    const content = harmonizedParagraphs[paragraphIndex - 1];
-    const sources = sourcesByParagraph[paragraphIndex - 1] || [];
 
     await client.query(
       `
@@ -166,6 +161,31 @@ async function insertSegmentParagraphsAndSources(
       );
     }
   }
+
+  const harmonizedParagraphs = await harmonizeSegmentParagraphs({
+    topic: args.topic,
+    segment,
+    paragraphs: generatedParagraphs,
+    sources: discoveredSources,
+  });
+
+  for (let paragraphIndex = 1; paragraphIndex <= harmonizedParagraphs.length; paragraphIndex += 1) {
+    const paragraphId = paragraphIds[paragraphIndex - 1];
+    const content = harmonizedParagraphs[paragraphIndex - 1];
+    await client.query(
+      `
+        UPDATE review_paragraphs
+        SET previous_content = content, content = $2, updated_at = NOW()
+        WHERE id = $1 AND session_id = $3 AND plan_id = $4
+      `,
+      [
+        paragraphId,
+        content,
+        args.sessionId,
+        args.planId,
+      ],
+    );
+  }
 }
 
 async function seedInitialReviewPreview(args: EnsureReviewPreviewArgs): Promise<void> {
@@ -197,9 +217,9 @@ async function seedInitialReviewPreview(args: EnsureReviewPreviewArgs): Promise<
       [args.sessionId, args.planId],
     );
 
-    await insertSegmentParagraphsAndSources(client, args, firstSegment);
-
     await client.query("COMMIT");
+
+    await insertSegmentParagraphsAndSources(client, args, firstSegment);
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
@@ -619,6 +639,20 @@ export async function ensureReviewPreview(
     return existing;
   }
 
-  await seedInitialReviewPreview(args);
-  return getReviewPreviewByPlanId(args.sessionId, args.planId);
+  const key = getPreviewGenerationKey(args.sessionId, args.planId);
+  if (!activePreviewGenerations.has(key)) {
+    activePreviewGenerations.add(key);
+
+    void (async () => {
+      try {
+        await seedInitialReviewPreview(args);
+      } catch (error) {
+        console.error("Error seeding review preview:", error);
+      } finally {
+        activePreviewGenerations.delete(key);
+      }
+    })();
+  }
+
+  return existing;
 }
