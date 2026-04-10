@@ -818,61 +818,81 @@ export function ReviewPage({
           Review each segment as an independent page. Finish one page, then move to the next.
         </p>
         <div className="review-toolbar">
-          <div className="review-threshold-control">
-            <label htmlFor="relevance-threshold" className="hint">
-              Focus strictness: {relevanceThresholdLabel}
-            </label>
-            <input
-              id="relevance-threshold"
-              type="range"
-              min={0.6}
-              max={0.95}
-              step={0.01}
-              value={relevanceThreshold}
-              onChange={(event) => setRelevanceThreshold(Number(event.target.value))}
-            />
+          <div className="review-toolbar-row review-toolbar-row-primary">
+            <div className="review-page-nav-group">
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => goToPage(activePageIndex - 1)}
+                disabled={activePageIndex <= 0}
+              >
+                Previous Page
+              </button>
+
+              <p className="review-page-indicator">
+                Page {activePageIndex + 1} / {Math.max(reviewPages.length, 1)}
+                {currentPageApproved ? ' - approved' : ' - in review'}
+              </p>
+
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => goToPage(activePageIndex + 1)}
+                disabled={!currentPageApproved || activePageIndex >= reviewPages.length - 1}
+              >
+                Next Page
+              </button>
+            </div>
+
+            <div className="review-approve-group">
+              <button
+                type="button"
+                className="button"
+                onClick={handleApproveAndContinue}
+                disabled={
+                  !activePage ||
+                  currentPageApproved ||
+                  isApproving ||
+                  currentPageHasPendingParagraphs ||
+                  !currentPageHasApprovedParagraphs
+                }
+              >
+                {isApproving ? 'Approving...' : currentPageApproved ? 'Page Approved' : 'Approve & Continue'}
+              </button>
+            </div>
           </div>
-          <button
-            type="button"
-            className="button"
-            onClick={handleApproveAndContinue}
-            disabled={
-              !activePage ||
-              currentPageApproved ||
-              isApproving ||
-              currentPageHasPendingParagraphs ||
-              !currentPageHasApprovedParagraphs
-            }
-          >
-            {isApproving ? 'Approving...' : currentPageApproved ? 'Page Approved' : 'Approve & Continue'}
-          </button>
-          <button type="button" className="button" onClick={handleExport} disabled={isExporting}>
-            {isExporting ? 'Exporting...' : 'Export Review JSON'}
-          </button>
-          <button
-            type="button"
-            className="text-button"
-            onClick={() => void handleDownloadApprovedDraftMarkdown()}
-            disabled={!approvedDraftMarkdown}
-          >
-            Download Approved Draft (.md)
-          </button>
-          <button
-            type="button"
-            className="text-button"
-            onClick={() => goToPage(activePageIndex - 1)}
-            disabled={activePageIndex <= 0}
-          >
-            Previous Page
-          </button>
-          <button
-            type="button"
-            className="text-button"
-            onClick={() => goToPage(activePageIndex + 1)}
-            disabled={!currentPageApproved || activePageIndex >= reviewPages.length - 1}
-          >
-            Next Page
-          </button>
+
+          <div className="review-toolbar-row review-toolbar-row-secondary">
+            <div className="review-threshold-control">
+              <label htmlFor="relevance-threshold" className="hint">
+                Focus strictness: {relevanceThresholdLabel}
+              </label>
+              <input
+                id="relevance-threshold"
+                type="range"
+                min={0.6}
+                max={0.95}
+                step={0.01}
+                value={relevanceThreshold}
+                onChange={(event) => setRelevanceThreshold(Number(event.target.value))}
+              />
+            </div>
+
+            <div className="review-export-group">
+              <button type="button" className="button" onClick={handleExport} disabled={isExporting}>
+                {isExporting ? 'Exporting...' : 'Export Review JSON'}
+              </button>
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => void handleDownloadApprovedDraftMarkdown()}
+                disabled={!approvedDraftMarkdown}
+              >
+                Download Approved Draft (.md)
+              </button>
+            </div>
+          </div>
+
           {exportNotice ? <p className="success-note review-success-note">{exportNotice}</p> : null}
         </div>
       </header>

@@ -739,8 +739,59 @@ select.field {
 .review-toolbar {
   margin-top: 1rem;
   display: flex;
-  gap: 0.75rem;
+  gap: 0.7rem;
+  align-items: stretch;
+  flex-direction: column;
+  flex-wrap: wrap;
+}
+
+.review-toolbar-row {
+  display: flex;
+  gap: 0.7rem;
   align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.review-toolbar-row-primary {
+  padding: 0.6rem;
+  border: 1px solid #dbe6f2;
+  border-radius: 10px;
+  background: #f8fbff;
+}
+
+.review-toolbar-row-secondary {
+  padding-left: 0.2rem;
+}
+
+.review-page-nav-group {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.review-page-indicator {
+  margin: 0;
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  background: #eaf2fb;
+  border: 1px solid #ccddf0;
+  color: #24435f;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.review-approve-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.review-export-group {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
   flex-wrap: wrap;
 }
 
@@ -764,7 +815,7 @@ select.field {
 }
 
 .review-success-note {
-  margin: 0;
+  margin: 0.15rem 0 0;
 }
 
 @media (max-width: 900px) {
@@ -790,5 +841,24 @@ select.field {
 
   .shell-wide {
     max-width: calc(100vw - 1.25rem);
+  }
+
+  .review-toolbar-row {
+    align-items: flex-start;
+  }
+
+  .review-toolbar-row-primary {
+    width: 100%;
+  }
+
+  .review-page-nav-group,
+  .review-export-group,
+  .review-threshold-control,
+  .review-approve-group {
+    width: 100%;
+  }
+
+  .review-page-indicator {
+    width: fit-content;
   }
 }
