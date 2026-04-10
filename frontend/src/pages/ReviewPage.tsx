@@ -36,6 +36,7 @@ export function ReviewPage({
   const [reviewPages, setReviewPages] = useState<ReviewPage[]>([])
   const [activePageIndex, setActivePageIndex] = useState(0)
   const [approvedSegmentOrders, setApprovedSegmentOrders] = useState<number[]>([])
+  const [relevanceThreshold, setRelevanceThreshold] = useState(0.78)
   const [activeParagraphId, setActiveParagraphId] = useState<string | null>(null)
   const [activeSourceId, setActiveSourceId] = useState<string | null>(null)
   const [isSourcePreviewLoading, setIsSourcePreviewLoading] = useState(false)
@@ -75,6 +76,8 @@ export function ReviewPage({
     setActiveParagraphId(nextParagraphId)
     setActiveSourceId(nextSourceId)
   }
+
+  const relevanceThresholdLabel = useMemo(() => `${Math.round(relevanceThreshold * 100)}%`, [relevanceThreshold])
 
   function getPreferredSourceId(paragraph: ReviewParagraph | null): string | null {
     if (!paragraph || paragraph.sources.length === 0) {
@@ -404,6 +407,7 @@ export function ReviewPage({
           body: JSON.stringify({
             planId: reviewData.planId,
             segmentOrder: activePage.segmentOrder,
+            relevanceThreshold,
           }),
         },
       )
@@ -444,7 +448,12 @@ export function ReviewPage({
       }
       setError(null)
 
-      const query = planId ? `?planId=${encodeURIComponent(planId)}` : ''
+      const queryParams = new URLSearchParams()
+      if (planId) {
+        queryParams.set('planId', planId)
+      }
+      queryParams.set('relevanceThreshold', relevanceThreshold.toFixed(2))
+      const query = `?${queryParams.toString()}`
 
       try {
         const response = await fetch(`${apiBaseUrl}/api/research/${sessionId}/review-preview${query}`, {
@@ -498,7 +507,7 @@ export function ReviewPage({
         window.clearTimeout(pollTimeout)
       }
     }
-  }, [apiBaseUrl, sessionId, planId, onError])
+  }, [apiBaseUrl, sessionId, planId, relevanceThreshold, onError])
 
   const activeParagraph = useMemo<ReviewParagraph | null>(() => {
     if (liveParagraphs.length === 0) {
@@ -601,6 +610,7 @@ export function ReviewPage({
 
       const query = new URLSearchParams({
         planId: draftPlanId,
+        relevanceThreshold: relevanceThreshold.toFixed(2),
       })
 
       try {
@@ -641,6 +651,7 @@ export function ReviewPage({
     apiBaseUrl,
     sessionId,
     reviewData,
+    relevanceThreshold,
     rawApprovedDraftMarkdown,
     onApprovedDraftLoadingChange,
     onApprovedDraftErrorChange,
@@ -807,6 +818,20 @@ export function ReviewPage({
           Review each segment as an independent page. Finish one page, then move to the next.
         </p>
         <div className="review-toolbar">
+          <div className="review-threshold-control">
+            <label htmlFor="relevance-threshold" className="hint">
+              Focus strictness: {relevanceThresholdLabel}
+            </label>
+            <input
+              id="relevance-threshold"
+              type="range"
+              min={0.6}
+              max={0.95}
+              step={0.01}
+              value={relevanceThreshold}
+              onChange={(event) => setRelevanceThreshold(Number(event.target.value))}
+            />
+          </div>
           <button
             type="button"
             className="button"

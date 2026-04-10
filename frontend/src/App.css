@@ -744,6 +744,25 @@ select.field {
   flex-wrap: wrap;
 }
 
+.review-threshold-control {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid #d7e0ea;
+  border-radius: 0.6rem;
+  background: #f7fbff;
+}
+
+.review-threshold-control .hint {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.review-threshold-control input[type="range"] {
+  width: 140px;
+}
+
 .review-success-note {
   margin: 0;
 }
