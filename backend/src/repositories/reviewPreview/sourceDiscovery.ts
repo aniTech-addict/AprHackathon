@@ -1,4 +1,5 @@
 import type { CandidateSource, SourceSeed } from "./types";
+import { searchWeb } from "../../services/tavilyClient";
 
 const TRUSTED_EXACT_HOSTS = new Set([
   "en.wikipedia.org",
@@ -554,6 +555,26 @@ export async function discoverTrustedWebSources(
   const scopedFocus = researchFocusContext.trim().slice(0, 180);
   const query = `${segmentTopic} ${topic} ${scopedFocus}`.trim();
 
+  // Try Tavily first for richer, more relevant web results
+  const tavilyResults = await searchWeb(query, limit + 2);
+  if (tavilyResults.length > 0) {
+    const tavilyCandidates: CandidateSource[] = tavilyResults.map((result) => ({
+      title: result.title,
+      url: result.url,
+      excerpt: result.content.slice(0, 300),
+    }));
+
+    const unique = dedupeSources(tavilyCandidates);
+    if (unique.length > 0) {
+      return unique.slice(0, limit).map((entry) => ({
+        title: entry.title,
+        url: entry.url,
+        excerpt: entry.excerpt,
+      }));
+    }
+  }
+
+  // Fall back to Wikipedia, OpenAlex, and Crossref if Tavily is unavailable or returns no usable results
   const [wikiCandidates, openAlexCandidates, crossrefCandidates] = await Promise.all([
     fetchWikipediaCandidates(query),
     fetchOpenAlexCandidates(query),

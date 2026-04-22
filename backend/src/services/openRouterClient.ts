@@ -1,3 +1,5 @@
+import OpenAI from "openai";
+
 type ChatMessage = {
   role: "system" | "user" | "assistant";
   content: string;
@@ -25,96 +27,104 @@ export interface StreamJsonChatResult {
   totalTokens: number;
 }
 
-let openRouterClientPromise: Promise<any> | null = null;
+let grokClient: OpenAI | null = null;
 
 /**
- * @returns {Promise} OpenRouter client instance or null if initialization fails (e.g. missing API key)
- * The function initializes and returns an OpenRouter client instance. It checks for the presence of the OPENROUTER_API_KEY environment variable and attempts to import and create the client. 
- * If the API key is missing or if initialization fails, it logs an error and returns null,calling functions handle the null case... dsfas
+ * @returns {OpenAI | null} Grok (xAI) client instance or null if initialization fails (e.g. missing API key).
+ * Uses the OpenAI-compatible xAI API with base URL https://api.x.ai/v1.
+ * Requires XAI_API_KEY environment variable to be set.
  */
-async function getOpenRouterClient(): Promise<any | null> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
+function getGrokClient(): OpenAI | null {
+  const apiKey = process.env.XAI_API_KEY;
   if (!apiKey) {
-    console.error("[openrouter] OPENROUTER_API_KEY is missing. Skipping API call and falling back.");
+    console.error("[grok] XAI_API_KEY is missing. Skipping API call and falling back.");
     return null;
   }
 
-  if (!openRouterClientPromise) {
-    openRouterClientPromise = import("@openrouter/sdk")
-      .then(({ OpenRouter }) => {
-        return new OpenRouter({
-          apiKey,
-          httpReferer:
-            process.env.OPENROUTER_HTTP_REFERER || "https://web-researcher-agent.local",
-          appTitle: process.env.OPENROUTER_APP_TITLE || "Web Researcher Agent",
-        });
-      })
-      .catch((error) => {
-        console.error("[openrouter] Failed to initialize OpenRouter client:", error);
-        return null;
-      });
+  if (!grokClient) {
+    grokClient = new OpenAI({
+      apiKey,
+      baseURL: "https://api.x.ai/v1",
+    });
   }
 
-  return openRouterClientPromise;
+  return grokClient;
 }
 
 /**
- * yet to be documented
- * @param request 
- * @returns 
+ * Sends a chat completion request to the Grok API (xAI) and returns the full response content.
+ * Streams the response internally and accumulates the full content before returning.
+ * Falls back to null if the API key is missing or the request fails.
  */
 export async function streamJsonChatCompletion(
   request: StreamJsonChatRequest
 ): Promise<StreamJsonChatResult | null> {
   try {
-    const openrouter = await getOpenRouterClient();
-    if (!openrouter) return null;
+    const client = getGrokClient();
+    if (!client) return null;
 
-    const model = request.model || process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini";
-    console.info(`[openrouter:${request.operation}] starting request model=${model}`);
+    const model = request.model || process.env.GROK_MODEL || "grok-3-mini";
+    console.info(`[grok:${request.operation}] starting request model=${model}`);
 
-    const stream = await openrouter.chat.send({
-      chatRequest: {
-        model,
-        messages: request.messages,
-        stream: true,
-        temperature: request.temperature,
-        ...(request.responseFormat ? { responseFormat: request.responseFormat } : {}),
-      },
+    // Build response_format for OpenAI-compatible API.
+    // Grok supports json_object; map json_schema requests to json_object for compatibility.
+    let responseFormat: OpenAI.Chat.Completions.ChatCompletionCreateParams["response_format"] | undefined;
+    if (request.responseFormat) {
+      if (request.responseFormat.type === "json_schema" && request.responseFormat.jsonSchema) {
+        responseFormat = {
+          type: "json_schema",
+          json_schema: {
+            name: request.responseFormat.jsonSchema.name,
+            description: request.responseFormat.jsonSchema.description,
+            schema: request.responseFormat.jsonSchema.schema,
+            strict: request.responseFormat.jsonSchema.strict ?? true,
+          },
+        } as OpenAI.Chat.Completions.ChatCompletionCreateParams["response_format"];
+      } else {
+        responseFormat = { type: "json_object" };
+      }
+    }
+
+    const stream = await client.chat.completions.create({
+      model,
+      messages: request.messages,
+      stream: true,
+      temperature: request.temperature,
+      ...(responseFormat ? { response_format: responseFormat } : {}),
     });
 
     let content = "";
     let reasoningTokens = 0;
     let totalTokens = 0;
 
-    for await (const chunk of stream as AsyncIterable<any>) {
+    for await (const chunk of stream) {
       const deltaContent = chunk.choices?.[0]?.delta?.content;
       if (deltaContent) {
         content += deltaContent;
       }
 
-      if (chunk.usage?.reasoningTokens != null) {
-        reasoningTokens = chunk.usage.reasoningTokens;
+      if (chunk.usage?.completion_tokens_details != null) {
+        reasoningTokens = (chunk.usage.completion_tokens_details as any).reasoning_tokens ?? 0;
       }
 
-      if (chunk.usage?.totalTokens != null) {
-        totalTokens = chunk.usage.totalTokens;
+      if (chunk.usage?.total_tokens != null) {
+        totalTokens = chunk.usage.total_tokens;
       }
 
       if (deltaContent || chunk.usage) {
         console.info(
-          `[openrouter:${request.operation}] chunk content=${deltaContent ? JSON.stringify(deltaContent) : "<empty>"} reasoningTokens=${chunk.usage?.reasoningTokens ?? "n/a"} totalTokens=${chunk.usage?.totalTokens ?? "n/a"}`
+          `[grok:${request.operation}] chunk content=${deltaContent ? JSON.stringify(deltaContent) : "<empty>"} totalTokens=${chunk.usage?.total_tokens ?? "n/a"}`
         );
       }
     }
 
     console.info(
-      `[openrouter:${request.operation}] completed model=${model} reasoningTokens=${reasoningTokens} totalTokens=${totalTokens}`
+      `[grok:${request.operation}] completed model=${model} reasoningTokens=${reasoningTokens} totalTokens=${totalTokens}`
     );
 
     return { content, reasoningTokens, totalTokens };
   } catch (error) {
-    console.error(`[openrouter:${request.operation}] API call failed:`, error);
+    console.error(`[grok:${request.operation}] API call failed:`, error);
     return null;
   }
 }

@@ -152,14 +152,14 @@ async function polishApprovedDraftMarkdown(args: {
     return cached.markdown;
   }
 
-  if (!process.env.OPENROUTER_API_KEY) {
+  if (!process.env.XAI_API_KEY) {
     polishedDraftCache.set(args.cacheKey, { hash, markdown: trimmed });
     return trimmed;
   }
 
   const result = await streamJsonChatCompletion({
     operation: "review-draft-markdown-polish",
-    model: process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini",
+    model: process.env.GROK_MODEL || "grok-3-mini",
     temperature: 0.1,
     messages: [
       {

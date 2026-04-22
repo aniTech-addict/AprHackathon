@@ -13,9 +13,11 @@
   "license": "ISC",
   "dependencies": {
     "@openrouter/sdk": "^0.11.2",
+    "@tavily/core": "^0.7.2",
     "cors": "^2.8.6",
     "dotenv": "^17.4.1",
     "express": "^5.2.1",
+    "openai": "^6.34.0",
     "pg": "^8.20.0"
   },
   "devDependencies": {

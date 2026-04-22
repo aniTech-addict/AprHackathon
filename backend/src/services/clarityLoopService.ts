@@ -65,7 +65,7 @@ Output rules:
   try {
     const result = await streamJsonChatCompletion({
       operation: "clarity-loop",
-      model: process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini",
+      model: process.env.GROK_MODEL || "grok-3-mini",
       temperature: 0.2,
       messages: [
         {
@@ -118,7 +118,7 @@ Output rules:
       reasoning: String(parsed.reasoning || "").trim(),
     };
   } catch (error) {
-    console.error("[clarity-loop] OpenRouter clarity evaluation failed; falling back to direct continuation.", error);
+    console.error("[clarity-loop] Grok API clarity evaluation failed; falling back to direct continuation.", error);
     return null;
   }
 }
@@ -127,10 +127,10 @@ export async function decideClarityNextStep(
   input: ClarityLoopInput
 ): Promise<ClarityLoopResult> {
   const maxRounds = 3;
-  const hasLlm = Boolean(process.env.OPENROUTER_API_KEY);
+  const hasLlm = Boolean(process.env.XAI_API_KEY);
 
   if (!hasLlm) {
-    console.error("[clarity-loop] OPENROUTER_API_KEY is missing; skipping LLM clarification loop.");
+    console.error("[clarity-loop] XAI_API_KEY is missing; skipping LLM clarification loop.");
     return {
       nextStep: "generate_research_plan",
       followUpQuestions: [],

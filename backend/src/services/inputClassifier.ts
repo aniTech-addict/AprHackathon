@@ -1,5 +1,5 @@
 /**
- * Classifies user research input as either "descriptive" or "vague" using a heuristic approach and an optional LLM-based classification via the OpenRouter API.
+ * Classifies user research input as either "descriptive" or "vague" using a heuristic approach and an optional LLM-based classification via the Grok API (xAI).
  */
 
 import { streamJsonChatCompletion } from "./openRouterClient";
@@ -116,14 +116,14 @@ function heuristicClassify(input: string): ClassificationResult {
 }
 
 /**
- * Classifies user research input using the OpenRouter API
+ * Classifies user research input using the Grok API (xAI)
  * @param {String} input - User research topic input to classify
  * @returns {Promise<ClassificationResult | null>} ClassificationResult or null if API call fails or returns invalid response 
  */
-async function classifyWithOpenRouter(input: string): Promise<ClassificationResult | null> {
+async function classifyWithGrok(input: string): Promise<ClassificationResult | null> {
   const result = await streamJsonChatCompletion({
     operation: "input-classification",
-    model: process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini",
+    model: process.env.GROK_MODEL || "grok-3-mini",
     temperature: 0.1,
     messages: [
       {
@@ -156,7 +156,7 @@ async function classifyWithOpenRouter(input: string): Promise<ClassificationResu
   });
 
   if (!result) {
-    console.error("[input-classification] OpenRouter returned no result; falling back to heuristics.");
+    console.error("[input-classification] Grok API returned no result; falling back to heuristics.");
     return null;
   }
 
@@ -171,9 +171,9 @@ async function classifyWithOpenRouter(input: string): Promise<ClassificationResu
     ) {
       return parsed;
     }
-    console.error("[input-classification] OpenRouter returned invalid JSON shape:", result.content);
+    console.error("[input-classification] Grok API returned invalid JSON shape:", result.content);
   } catch (_error) {
-    console.error("[input-classification] Failed to parse OpenRouter response:", result.content);
+    console.error("[input-classification] Failed to parse Grok API response:", result.content);
     return null;
   }
 
@@ -184,11 +184,11 @@ async function classifyWithOpenRouter(input: string): Promise<ClassificationResu
  * 
  * @param {String} input - User research topic input to classify 
  * @returns {Promise<ClassificationResult>} ClassificationResult with category, confidence score and reasoning for classification
- * The function first attempts to classify the input using the OpenRouter API. If the API call fails or returns an invalid response, it falls back to a heuristic classification method based on word count and presence of certain keywords.
+ * The function first attempts to classify the input using the Grok API (xAI). If the API call fails or returns an invalid response, it falls back to a heuristic classification method based on word count and presence of certain keywords.
  */
 export async function classifyInput(input: string): Promise<ClassificationResult> {
   try {
-    const llmResult = await classifyWithOpenRouter(input);
+    const llmResult = await classifyWithGrok(input);
     if (llmResult) {
       if (llmResult.category === "descriptive" && !isDescriptiveByStrictRule(input)) {
         return {
@@ -202,7 +202,7 @@ export async function classifyInput(input: string): Promise<ClassificationResult
       return llmResult;
     }
   } catch (error) {
-    console.error("[input-classification] OpenRouter classification failed; using heuristic fallback:", error);
+    console.error("[input-classification] Grok API classification failed; using heuristic fallback:", error);
   }
   
   // if api key is not configured, return heuristic classification result immediately without calling external API

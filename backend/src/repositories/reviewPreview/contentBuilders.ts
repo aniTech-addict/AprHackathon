@@ -112,7 +112,7 @@ Return strict JSON with only: {"score": number}`;
 
   const result = await streamJsonChatCompletion({
     operation: "segment-relevance-score",
-    model: process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini",
+    model: process.env.GROK_MODEL || "grok-3-mini",
     temperature: 0,
     messages: [
       {
@@ -191,7 +191,7 @@ Return strict JSON with only: {"paragraph": string}`;
 
   const result = await streamJsonChatCompletion({
     operation: "segment-focus-rewrite",
-    model: process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini",
+    model: process.env.GROK_MODEL || "grok-3-mini",
     temperature: 0.1,
     messages: [
       {
@@ -322,7 +322,7 @@ export async function buildReviewParagraphContent(
 
   const result = await streamJsonChatCompletion({
     operation: "generate-paragraph",
-    model: process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini",
+    model: process.env.GROK_MODEL || "grok-3-mini",
     temperature: 0.2,
     messages: [
       {
@@ -426,7 +426,7 @@ Return strict JSON with key "paragraphs" as an array of 3 strings.`;
 
   const result = await streamJsonChatCompletion({
     operation: "harmonize-segment-paragraphs",
-    model: process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini",
+    model: process.env.GROK_MODEL || "grok-3-mini",
     temperature: 0.1,
     messages: [
       {
