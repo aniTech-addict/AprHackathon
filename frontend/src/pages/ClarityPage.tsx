@@ -1,6 +1,8 @@
 import type { FormEvent } from 'react'
 import { useState } from 'react'
 import { AsyncProgressPanel } from '../components/AsyncProgressPanel'
+import { Tooltip } from '../components/Tooltip'
+import { useToast } from '../components/Toast'
 
 interface ClarityPageProps {
   apiBaseUrl: string
@@ -19,6 +21,7 @@ export function ClarityPage({
   onClarityComplete,
   onError,
 }: ClarityPageProps) {
+  const toast = useToast()
   const [userBackground, setUserBackground] = useState<'researcher' | 'student' | 'teacher'>('student')
   const [researchGoal, setResearchGoal] = useState('')
   const [sourcePreferences, setSourcePreferences] = useState<string[]>(['articles_news', 'reputable_only'])
@@ -26,6 +29,7 @@ export function ClarityPage({
   const [followUpAnswers, setFollowUpAnswers] = useState<string[]>(initialFollowUpQuestions.map(() => ''))
   const [clarityRound, setClarityRound] = useState(initialClarityRound || 1)
   const [notice, setNotice] = useState<string | null>(null)
+  const [noticeClassName, setNoticeClassName] = useState<string>('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -75,14 +79,15 @@ export function ClarityPage({
         message?: string
       }
 
-      if (payload.nextStep === 'ask_clarity_questions' && Array.isArray(payload.followUpQuestions)) {
-        const questions = payload.followUpQuestions.filter(Boolean)
-        setFollowUpQuestions(questions)
-        setFollowUpAnswers(questions.map(() => ''))
-        setClarityRound(payload.clarityRound || clarityRound + 1)
-        setNotice(payload.message || 'Please provide more details before planning.')
-        return
-      }
+       if (payload.nextStep === 'ask_clarity_questions' && Array.isArray(payload.followUpQuestions)) {
+         const questions = payload.followUpQuestions.filter(Boolean)
+         setFollowUpQuestions(questions)
+         setFollowUpAnswers(questions.map(() => ''))
+         setClarityRound(payload.clarityRound || clarityRound + 1)
+         setNotice(payload.message || 'Please provide more details before planning.')
+         setNoticeClassName('error')
+         return
+       }
 
       onClarityComplete()
     } catch (submitError) {
@@ -217,8 +222,10 @@ export function ClarityPage({
           ) : null}
         </form>
 
-        {notice ? <p className="success-note">{notice}</p> : null}
-        {error ? <p className="error">{error}</p> : null}
+       {notice ? (
+         <p className={`success-note ${noticeClassName}`}>{notice}</p>
+       ) : null}
+       {error ? <p className="error">{error}</p> : null}
       </section>
     </main>
   )

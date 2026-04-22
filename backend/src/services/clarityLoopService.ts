@@ -3,6 +3,7 @@
 // we do need to ask in loop for clarification questions before moving forward
 
 import { streamJsonChatCompletion } from "./openRouterClient";
+import { config } from "../config";
 
 export interface ClarityLoopInput {
   topic: string;
@@ -37,6 +38,13 @@ function normalizeQuestions(questions: unknown): string[] {
 async function evaluateWithLlm(
   input: ClarityLoopInput
 ): Promise<LlmClarityResult | null> {
+  const model =
+    config.llmProvider === "grok"
+      ? config.grokModel
+      : config.llmProvider === "groq"
+      ? config.groqModel
+      : config.openRouterModel;
+
   const prompt = `Decide whether there is enough information to generate a strong research plan.
 
 Context:
@@ -65,7 +73,7 @@ Output rules:
   try {
     const result = await streamJsonChatCompletion({
       operation: "clarity-loop",
-      model: process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini",
+      model,
       temperature: 0.2,
       messages: [
         {
@@ -118,7 +126,7 @@ Output rules:
       reasoning: String(parsed.reasoning || "").trim(),
     };
   } catch (error) {
-    console.error("[clarity-loop] OpenRouter clarity evaluation failed; falling back to direct continuation.", error);
+    console.error("[clarity-loop] LLM clarity evaluation failed; falling back to direct continuation.", error);
     return null;
   }
 }
@@ -127,10 +135,15 @@ export async function decideClarityNextStep(
   input: ClarityLoopInput
 ): Promise<ClarityLoopResult> {
   const maxRounds = 3;
-  const hasLlm = Boolean(process.env.OPENROUTER_API_KEY);
+  const hasLlm =
+    config.llmProvider === "grok"
+      ? Boolean(config.grokApiKey)
+      : config.llmProvider === "groq"
+      ? Boolean(config.groqApiKey)
+      : Boolean(config.openRouterApiKey);
 
   if (!hasLlm) {
-    console.error("[clarity-loop] OPENROUTER_API_KEY is missing; skipping LLM clarification loop.");
+    console.error(`[clarity-loop] ${config.llmProvider.toUpperCase()} provider key is missing; skipping LLM clarification loop.`);
     return {
       nextStep: "generate_research_plan",
       followUpQuestions: [],

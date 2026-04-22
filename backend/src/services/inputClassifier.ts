@@ -3,6 +3,7 @@
  */
 
 import { streamJsonChatCompletion } from "./openRouterClient";
+import { config } from "../config";
 
 
 type InputCategory = "descriptive" | "vague";
@@ -121,9 +122,16 @@ function heuristicClassify(input: string): ClassificationResult {
  * @returns {Promise<ClassificationResult | null>} ClassificationResult or null if API call fails or returns invalid response 
  */
 async function classifyWithOpenRouter(input: string): Promise<ClassificationResult | null> {
+  const model =
+    config.llmProvider === "grok"
+      ? config.grokModel
+      : config.llmProvider === "groq"
+      ? config.groqModel
+      : config.openRouterModel;
+
   const result = await streamJsonChatCompletion({
     operation: "input-classification",
-    model: process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini",
+    model,
     temperature: 0.1,
     messages: [
       {
@@ -156,7 +164,7 @@ async function classifyWithOpenRouter(input: string): Promise<ClassificationResu
   });
 
   if (!result) {
-    console.error("[input-classification] OpenRouter returned no result; falling back to heuristics.");
+    console.error("[input-classification] LLM provider returned no result; falling back to heuristics.");
     return null;
   }
 
@@ -171,9 +179,9 @@ async function classifyWithOpenRouter(input: string): Promise<ClassificationResu
     ) {
       return parsed;
     }
-    console.error("[input-classification] OpenRouter returned invalid JSON shape:", result.content);
+    console.error("[input-classification] LLM provider returned invalid JSON shape:", result.content);
   } catch (_error) {
-    console.error("[input-classification] Failed to parse OpenRouter response:", result.content);
+    console.error("[input-classification] Failed to parse LLM provider response:", result.content);
     return null;
   }
 
@@ -202,7 +210,7 @@ export async function classifyInput(input: string): Promise<ClassificationResult
       return llmResult;
     }
   } catch (error) {
-    console.error("[input-classification] OpenRouter classification failed; using heuristic fallback:", error);
+    console.error("[input-classification] LLM classification failed; using heuristic fallback:", error);
   }
   
   // if api key is not configured, return heuristic classification result immediately without calling external API

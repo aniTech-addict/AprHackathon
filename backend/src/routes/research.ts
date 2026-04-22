@@ -1,5 +1,6 @@
 import { Router } from "express";
 import {
+  providerHealthHandler,
   approveReviewParagraphHandler,
   approvePlanHandler,
   deleteReviewParagraphHandler,
@@ -17,6 +18,8 @@ import {
 } from "./research/handlers";
 
 const router = Router();
+
+router.get("/providers/health", providerHealthHandler);
 
 // Phase 1: Start research session with topic and preferences
 router.post("/start", startResearchHandler);

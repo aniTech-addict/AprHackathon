@@ -5,6 +5,7 @@ import { ClarityPage } from './pages/ClarityPage'
 import { PlanningPage } from './pages/PlanningPage'
 import { ReviewPage } from './pages/ReviewPage'
 import { SessionSidebar } from './components/SessionSidebar'
+import { ToastProvider } from './components/Toast'
 import type { Phase, StartResearchResponse } from './types'
 
 function App() {
@@ -116,7 +117,7 @@ function App() {
   const showSidebar = currentPhase !== 'review' || reviewHasGeneratedParagraphs
 
   return (
-    <>
+    <ToastProvider>
       {showSidebar ? (
         <SessionSidebar
           isOpen={sidebarOpen}
@@ -133,7 +134,7 @@ function App() {
         />
       ) : null}
       {content}
-    </>
+    </ToastProvider>
   )
 }
 

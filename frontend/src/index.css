@@ -8,6 +8,14 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+.error {
+  color: #dc2626;
+}
+
+.success-note {
+  color: #16a34a;
+}
+
 * {
   box-sizing: border-box;
 }

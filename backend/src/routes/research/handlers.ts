@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "crypto";
 import type { Request, Response } from "express";
 import { pool } from "../../db";
+import { config } from "../../config";
 import {
   createSession,
   updateSessionWithClarity,
@@ -27,7 +28,10 @@ import {
   refineParagraphWithAi,
   stabilizeParagraphFlow,
 } from "../../services/reviewRefinementService";
-import { normalizeTrustedUrl } from "../../repositories/reviewPreview/sourceDiscovery";
+import {
+  extractSourceWithTavily,
+  normalizeTrustedUrl,
+} from "../../repositories/reviewPreview/sourceDiscovery";
 import { streamJsonChatCompletion } from "../../services/openRouterClient";
 import { decideClarityNextStep } from "../../services/clarityLoopService";
 import { classifyInput } from "../../services/inputClassifier";
@@ -55,6 +59,33 @@ interface ReviewPlanRecord {
   id: string;
   structure: unknown;
   status: string;
+}
+
+export async function providerHealthHandler(
+  _req: Request,
+  res: Response,
+): Promise<Response> {
+  return res.status(200).json({
+    llm: {
+      provider: config.llmProvider,
+      openRouterConfigured: Boolean(config.openRouterApiKey),
+      grokConfigured: Boolean(config.grokApiKey),
+      groqConfigured: Boolean(config.groqApiKey),
+      openRouterModel: config.openRouterModel,
+      grokModel: config.grokModel,
+      groqModel: config.groqModel,
+    },
+    search: {
+      provider: config.searchProvider,
+      tavilyConfigured: Boolean(config.tavilyApiKey),
+      tavilySearchDepth: config.tavilySearchDepth,
+      tavilyMaxResults: config.tavilyMaxResults,
+      tavilySearchTimeoutMs: config.tavilySearchTimeoutMs,
+      tavilyExtractTimeoutMs: config.tavilyExtractTimeoutMs,
+      tavilyIncludeAnswer: config.tavilyIncludeAnswer,
+    },
+    checkedAt: new Date().toISOString(),
+  });
 }
 
 const polishedDraftCache = new Map<string, { hash: string; markdown: string }>();
@@ -1191,6 +1222,18 @@ export async function sourcePreviewHandler(
   }
 
   try {
+    const searchProvider = (process.env.SEARCH_PROVIDER || "legacy").toLowerCase();
+    if (searchProvider === "tavily") {
+      const extracted = await extractSourceWithTavily(normalized);
+      if (extracted?.excerpt) {
+        return res.status(200).json({
+          url: normalized,
+          title: extracted.title || "Webpage preview",
+          excerpt: extracted.excerpt,
+        });
+      }
+    }
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 12000);
 

@@ -1,4 +1,5 @@
 import type { CandidateSource, SourceSeed } from "./types";
+import { config } from "../../config";
 
 const TRUSTED_EXACT_HOSTS = new Set([
   "en.wikipedia.org",
@@ -545,6 +546,145 @@ async function fetchCrossrefCandidates(query: string): Promise<CandidateSource[]
   }
 }
 
+async function fetchTavilyCandidates(query: string, limit: number): Promise<CandidateSource[]> {
+  const apiKey = config.tavilyApiKey;
+  if (!apiKey) {
+    return [];
+  }
+
+  const endpoint = process.env.TAVILY_SEARCH_URL || "https://api.tavily.com/search";
+  const searchDepth = config.tavilySearchDepth;
+  const maxResults = Math.max(3, Math.min(limit * 2, config.tavilyMaxResults || 8));
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), config.tavilySearchTimeoutMs);
+  const startedAt = Date.now();
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        query,
+        max_results: maxResults,
+        search_depth: searchDepth,
+        include_answer: config.tavilyIncludeAnswer,
+        include_raw_content: false,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error(
+        `[tavily:search] status=${response.status} elapsedMs=${Date.now() - startedAt} query=${JSON.stringify(query.slice(0, 120))}`,
+      );
+      return [];
+    }
+
+    const payload = (await response.json()) as {
+      results?: Array<{
+        title?: string;
+        url?: string;
+        content?: string;
+      }>;
+    };
+
+    const results = Array.isArray(payload.results) ? payload.results : [];
+    console.info(
+      `[tavily:search] ok elapsedMs=${Date.now() - startedAt} results=${results.length} query=${JSON.stringify(query.slice(0, 120))}`,
+    );
+    return results
+      .map((result) => {
+        const url = String(result.url || "").trim();
+        if (!url) {
+          return null;
+        }
+
+        return {
+          title: String(result.title || "Web source").trim() || "Web source",
+          url,
+          excerpt:
+            String(result.content || "").trim() || "Web source returned by Tavily search.",
+        } satisfies CandidateSource;
+      })
+      .filter((candidate): candidate is CandidateSource => candidate !== null);
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function extractSourceWithTavily(
+  url: string,
+): Promise<{ title: string; excerpt: string } | null> {
+  const apiKey = config.tavilyApiKey;
+  if (!apiKey) {
+    return null;
+  }
+
+  const endpoint = process.env.TAVILY_EXTRACT_URL || "https://api.tavily.com/extract";
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), config.tavilyExtractTimeoutMs);
+  const startedAt = Date.now();
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        urls: [url],
+        include_images: false,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error(
+        `[tavily:extract] status=${response.status} elapsedMs=${Date.now() - startedAt} url=${JSON.stringify(url)}`,
+      );
+      return null;
+    }
+
+    const payload = (await response.json()) as {
+      results?: Array<{
+        title?: string;
+        raw_content?: string;
+        content?: string;
+      }>;
+    };
+
+    const first = Array.isArray(payload.results) ? payload.results[0] : null;
+    if (!first) {
+      return null;
+    }
+
+    const excerpt = String(first.raw_content || first.content || "").trim();
+    if (!excerpt) {
+      return null;
+    }
+
+    console.info(
+      `[tavily:extract] ok elapsedMs=${Date.now() - startedAt} chars=${excerpt.length} url=${JSON.stringify(url)}`,
+    );
+
+    return {
+      title: String(first.title || "Webpage preview").trim() || "Webpage preview",
+      excerpt,
+    };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function discoverTrustedWebSources(
   topic: string,
   segmentTopic: string,
@@ -553,6 +693,20 @@ export async function discoverTrustedWebSources(
 ): Promise<SourceSeed[]> {
   const scopedFocus = researchFocusContext.trim().slice(0, 180);
   const query = `${segmentTopic} ${topic} ${scopedFocus}`.trim();
+
+  const searchProvider = config.searchProvider;
+
+  if (searchProvider === "tavily") {
+    const tavilyCandidates = await fetchTavilyCandidates(query, limit);
+    const uniqueTavily = dedupeSources(tavilyCandidates);
+    if (uniqueTavily.length > 0) {
+      return uniqueTavily.slice(0, limit).map((entry) => ({
+        title: entry.title,
+        url: entry.url,
+        excerpt: entry.excerpt,
+      }));
+    }
+  }
 
   const [wikiCandidates, openAlexCandidates, crossrefCandidates] = await Promise.all([
     fetchWikipediaCandidates(query),

@@ -1,7 +1,26 @@
+import { config } from "../config";
+
 type ChatMessage = {
   role: "system" | "user" | "assistant";
   content: string;
 };
+
+interface GrokChatCompletionChoice {
+  message?: {
+    content?: string | Array<{ type?: string; text?: string }>;
+  };
+}
+
+interface GrokChatCompletionResponse {
+  choices?: GrokChatCompletionChoice[];
+  usage?: {
+    total_tokens?: number;
+    completion_tokens?: number;
+    prompt_tokens?: number;
+  };
+}
+
+type GroqChatCompletionResponse = GrokChatCompletionResponse;
 
 export interface StreamJsonChatRequest {
   operation: string;
@@ -26,6 +45,33 @@ export interface StreamJsonChatResult {
 }
 
 let openRouterClientPromise: Promise<any> | null = null;
+
+function getLlmProvider(): "openrouter" | "grok" | "groq" {
+  const provider = config.llmProvider;
+  if (provider === "grok") {
+    return "grok";
+  }
+
+  if (provider === "groq") {
+    return "groq";
+  }
+
+  return "openrouter";
+}
+
+function buildProviderModel(requestModel?: string): string {
+  const provider = getLlmProvider();
+
+  if (provider === "grok") {
+    return config.grokModel;
+  }
+
+  if (provider === "groq") {
+    return config.groqModel;
+  }
+
+  return requestModel || config.openRouterModel;
+}
 
 /**
  * @returns {Promise} OpenRouter client instance or null if initialization fails (e.g. missing API key)
@@ -66,11 +112,29 @@ async function getOpenRouterClient(): Promise<any | null> {
 export async function streamJsonChatCompletion(
   request: StreamJsonChatRequest
 ): Promise<StreamJsonChatResult | null> {
+  const startedAt = Date.now();
+  const provider = getLlmProvider();
+  if (provider === "grok") {
+    const result = await streamGrokJsonChatCompletion(request);
+    console.info(
+      `[llm:${request.operation}] provider=grok elapsedMs=${Date.now() - startedAt} success=${Boolean(result)}`,
+    );
+    return result;
+  }
+
+  if (provider === "groq") {
+    const result = await streamGroqJsonChatCompletion(request);
+    console.info(
+      `[llm:${request.operation}] provider=groq elapsedMs=${Date.now() - startedAt} success=${Boolean(result)}`,
+    );
+    return result;
+  }
+
   try {
     const openrouter = await getOpenRouterClient();
     if (!openrouter) return null;
 
-    const model = request.model || process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini";
+    const model = buildProviderModel(request.model);
     console.info(`[openrouter:${request.operation}] starting request model=${model}`);
 
     const stream = await openrouter.chat.send({
@@ -112,9 +176,168 @@ export async function streamJsonChatCompletion(
       `[openrouter:${request.operation}] completed model=${model} reasoningTokens=${reasoningTokens} totalTokens=${totalTokens}`
     );
 
-    return { content, reasoningTokens, totalTokens };
+    const result = { content, reasoningTokens, totalTokens };
+    console.info(
+      `[llm:${request.operation}] provider=openrouter elapsedMs=${Date.now() - startedAt} success=true`,
+    );
+    return result;
   } catch (error) {
     console.error(`[openrouter:${request.operation}] API call failed:`, error);
+    console.info(
+      `[llm:${request.operation}] provider=openrouter elapsedMs=${Date.now() - startedAt} success=false`,
+    );
+    return null;
+  }
+}
+
+async function streamGrokJsonChatCompletion(
+  request: StreamJsonChatRequest,
+): Promise<StreamJsonChatResult | null> {
+  try {
+    const apiKey = config.grokApiKey;
+    if (!apiKey) {
+      console.error("[grok] GROK_API_KEY is missing. Skipping API call and falling back.");
+      return null;
+    }
+
+    const model = buildProviderModel(request.model);
+    const endpoint = process.env.GROK_API_BASE_URL || "https://api.x.ai/v1/chat/completions";
+
+    const body: Record<string, unknown> = {
+      model,
+      messages: request.messages,
+      stream: false,
+      temperature: request.temperature,
+    };
+
+    if (request.responseFormat) {
+      if (request.responseFormat.type === "json_object") {
+        body.response_format = { type: "json_object" };
+      } else if (request.responseFormat.type === "json_schema" && request.responseFormat.jsonSchema) {
+        body.response_format = {
+          type: "json_schema",
+          json_schema: {
+            name: request.responseFormat.jsonSchema.name,
+            strict: request.responseFormat.jsonSchema.strict ?? true,
+            schema: request.responseFormat.jsonSchema.schema || {},
+          },
+        };
+      }
+    }
+
+    console.info(`[grok:${request.operation}] starting request model=${model}`);
+
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[grok:${request.operation}] request failed status=${response.status} body=${errorText}`);
+      return null;
+    }
+
+    const payload = (await response.json()) as GrokChatCompletionResponse;
+    const rawContent = payload.choices?.[0]?.message?.content;
+    const content = Array.isArray(rawContent)
+      ? rawContent.map((part) => (part?.type === "text" ? part.text || "" : "")).join("")
+      : String(rawContent || "");
+
+    const totalTokens = Number(payload.usage?.total_tokens || 0);
+    const reasoningTokens = Number(payload.usage?.completion_tokens || 0);
+
+    console.info(
+      `[grok:${request.operation}] completed model=${model} reasoningTokens=${reasoningTokens} totalTokens=${totalTokens}`,
+    );
+
+    return {
+      content,
+      reasoningTokens,
+      totalTokens,
+    };
+  } catch (error) {
+    console.error(`[grok:${request.operation}] API call failed:`, error);
+    return null;
+  }
+}
+
+async function streamGroqJsonChatCompletion(
+  request: StreamJsonChatRequest,
+): Promise<StreamJsonChatResult | null> {
+  try {
+    const apiKey = config.groqApiKey;
+    if (!apiKey) {
+      console.error("[groq] GROQ_API_KEY is missing. Skipping API call and falling back.");
+      return null;
+    }
+
+    const model = buildProviderModel(request.model);
+    const endpoint = config.groqApiBaseUrl;
+
+    const body: Record<string, unknown> = {
+      model,
+      messages: request.messages,
+      stream: false,
+      temperature: request.temperature,
+    };
+
+    if (request.responseFormat) {
+      if (request.responseFormat.type === "json_object") {
+        body.response_format = { type: "json_object" };
+      } else if (request.responseFormat.type === "json_schema" && request.responseFormat.jsonSchema) {
+        body.response_format = {
+          type: "json_schema",
+          json_schema: {
+            name: request.responseFormat.jsonSchema.name,
+            strict: request.responseFormat.jsonSchema.strict ?? true,
+            schema: request.responseFormat.jsonSchema.schema || {},
+          },
+        };
+      }
+    }
+
+    console.info(`[groq:${request.operation}] starting request model=${model}`);
+
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[groq:${request.operation}] request failed status=${response.status} body=${errorText}`);
+      return null;
+    }
+
+    const payload = (await response.json()) as GroqChatCompletionResponse;
+    const rawContent = payload.choices?.[0]?.message?.content;
+    const content = Array.isArray(rawContent)
+      ? rawContent.map((part) => (part?.type === "text" ? part.text || "" : "")).join("")
+      : String(rawContent || "");
+
+    const totalTokens = Number(payload.usage?.total_tokens || 0);
+    const reasoningTokens = Number(payload.usage?.completion_tokens || 0);
+
+    console.info(
+      `[groq:${request.operation}] completed model=${model} reasoningTokens=${reasoningTokens} totalTokens=${totalTokens}`,
+    );
+
+    return {
+      content,
+      reasoningTokens,
+      totalTokens,
+    };
+  } catch (error) {
+    console.error(`[groq:${request.operation}] API call failed:`, error);
     return null;
   }
 }
