@@ -20,6 +20,6 @@ const hardcodedLocalDbUrl = "postgres://postgres:postgres@127.0.0.1:5433/web_res
 export const config = {
     port: Number(process.env.PORT || 4000),
     nodeEnv: process.env.NODE_ENV || "development",
-    openRouterApiKey: process.env.OPENROUTER_API_KEY || null,
+    xaiApiKey: process.env.XAI_API_KEY || null,
     dbUrl: envDatabaseUrl || hardcodedLocalDbUrl,
 };

@@ -48,7 +48,7 @@ ${instruction ? `User refinement instruction: ${instruction}` : ""}`;
 
   const result = await streamJsonChatCompletion({
     operation: "review-ai-refine-paragraph",
-    model: process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini",
+    model: process.env.GROK_MODEL || "grok-3-mini",
     temperature: 0.2,
     messages: [
       {
@@ -110,7 +110,7 @@ export async function stabilizeParagraphFlow(
 
   const result = await streamJsonChatCompletion({
     operation: "review-flow-stabilize",
-    model: process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini",
+    model: process.env.GROK_MODEL || "grok-3-mini",
     temperature: 0.1,
     messages: [
       {
@@ -186,7 +186,7 @@ export async function harmonizeSegmentFlowWithPrevious(
 
   const result = await streamJsonChatCompletion({
     operation: "review-page-flow-harmonize",
-    model: process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini",
+    model: process.env.GROK_MODEL || "grok-3-mini",
     temperature: 0.1,
     messages: [
       {

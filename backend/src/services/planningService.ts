@@ -130,7 +130,7 @@ Output rules:
   try {
     const result = await streamJsonChatCompletion({
       operation: "research-planning",
-      model: process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini",
+      model: process.env.GROK_MODEL || "grok-3-mini",
       temperature: 0.3,
       messages: [
         {
@@ -202,7 +202,7 @@ Output rules:
       };
     }
   } catch (error) {
-    console.error("[research-planning] OpenRouter planning failed; falling back to heuristic plan.", error);
+    console.error("[research-planning] Grok API planning failed; falling back to heuristic plan.", error);
     return null;
   }
 
